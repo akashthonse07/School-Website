@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Management System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="aurora aurora-one"></div>
+    <div class="aurora aurora-two"></div>
+    <div class="mesh-overlay"></div>
+
+    <main class="login-shell" id="entryShell">
+        <section class="login-story">
+            <p class="eyebrow">School portal</p>
+            <h1>ಸರಕಾರಿ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ ಪರ್ಕಳ</h1>
+            <p class="intro">
+                Manage student marks and let students check their own results with a polished,
+                animated portal that feels alive instead of static.
+            </p>
+
+            <div class="image-stack" aria-label="School and student photos">
+                <figure class="photo-frame large">
+                    <img src="{{ url_for('static', filename='assets/school-campus-clean.jpg') }}" alt="School campus building">
+                </figure>
+                <figure class="photo-frame small">
+                    <img src="{{ url_for('static', filename='assets/students-group-clean.jpg') }}" alt="Students gathered on campus">
+
+                </figure>
+            </div>
+
+            </section>
+
+        <section class="access-stack">
+            <div class="role-switcher" role="tablist" aria-label="Select portal role">
+                <button
+                    type="button"
+                    class="role-pill is-active"
+                    data-role-switch="student"
+                    aria-pressed="true"
+                    aria-controls="studentAccessPanel"
+                >
+                    Student portal
+                </button>
+                <button
+                    type="button"
+                    class="role-pill"
+                    data-role-switch="admin"
+                    aria-pressed="false"
+                    aria-controls="adminAccessPanel"
+                >
+                    Admin portal
+                </button>
+            </div>
+
+            <article id="studentAccessPanel" class="auth-card access-panel">
+                <p class="eyebrow">Student access</p>
+                <h2>Check your result</h2>
+                <p class="muted">
+                    Enter your roll number to view marks, totals, and percentage instantly.
+                </p>
+                <form id="studentLookupForm" class="auth-form">
+                    <label class="field">
+                        <span>Roll number</span>
+                        <input id="lookupRollNo" name="roll_no" type="number" min="1" placeholder="101">
+                    </label>
+
+                    <div class="button-row">
+                        <button type="submit" class="primary-button">View result</button>
+                        <button type="button" class="ghost-button" id="viewEventPhotosBtn">View photos</button>
+                    </div>
+                </form>
+                <p id="lookupMessage" class="form-note" aria-live="polite"></p>
+
+                <section id="studentResult" class="result-card" hidden>
+                    <div class="result-head">
+                        <div>
+                            <p class="eyebrow">Result found</p>
+                            <h3 id="resultName">-</h3>
+                        </div>
+                        <span class="result-chip" id="resultRoll">Roll No -</span>
+                    </div>
+                    <p class="result-subtitle" id="resultClass">Class -</p>
+
+                    <div class="result-grid">
+                        <article class="result-tile">
+                            <span>Maths</span>
+                            <strong id="resultMaths">-</strong>
+                        </article>
+                        <article class="result-tile">
+                            <span>Science</span>
+                            <strong id="resultScience">-</strong>
+                        </article>
+                        <article class="result-tile">
+                            <span>English</span>
+                            <strong id="resultEnglish">-</strong>
+                        </article>
+                        <article class="result-tile">
+                            <span>Kannada</span>
+                            <strong id="resultKannada">-</strong>
+                        </article>
+                        <article class="result-tile">
+                            <span>Social Science</span>
+                            <strong id="resultSocialScience">-</strong>
+                        </article>
+                        <article class="result-tile">
+                            <span>Hindi</span>
+                            <strong id="resultHindi">-</strong>
+                        </article>
+                    </div>
+
+                    <div class="result-summary">
+                        <div>
+                            <span>Total</span>
+                            <strong id="resultTotal">-</strong>
+                        </div>
+                        <div>
+                            <span>Percentage</span>
+                            <strong id="resultPercentage">-</strong>
+                        </div>
+                        <div>
+                            <span>Grade</span>
+                            <strong id="resultGrade">-</strong>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="eventPhotoGallery" class="gallery-card" hidden>
+                    <div class="gallery-head">
+                        <div>
+                            <p class="eyebrow">Event gallery</p>
+                            <h3>School event photos</h3>
+                        </div>
+                        <span class="result-chip" id="photoCount">0 photos</span>
+                    </div>
+                    <p id="photoMessage" class="form-note" aria-live="polite"></p>
+                    <div id="photoGrid" class="gallery-grid"></div>
+                </section>
+            </article>
+
+            <article id="adminAccessPanel" class="auth-card access-panel" hidden>
+                <p class="eyebrow">Admin access</p>
+                <h2>Admin account</h2>
+                <p class="muted">
+                    Sign in with your school admin account. If no account has been created yet, set one up below.
+                </p>
+                <section id="adminLoginSection">
+                    <form id="adminLoginForm" class="auth-form" autocomplete="off">
+                        <label class="field">
+                            <span>Username</span>
+                            <input id="adminUsername" name="username" type="text" placeholder="Admin username">
+                        </label>
+
+                        <label class="field">
+                            <span>Password</span>
+                            <input id="adminPassword" name="password" type="password" placeholder="Password">
+                        </label>
+
+                        <button type="submit" class="primary-button">Admin login</button>
+                    </form>
+                    <p id="adminLoginMessage" class="form-note" aria-live="polite"></p>
+                </section>
+
+                <section id="adminSetupSection" hidden>
+                    <h3 class="section-heading">Create admin credentials</h3>
+                    <p class="muted">
+                        Create the first admin account for this portal. When credentials already exist, sign in first to change them.
+                    </p>
+                    <form id="adminSetupForm" class="auth-form" autocomplete="off">
+                        <label class="field">
+                            <span>Username</span>
+                            <input id="adminSetupUsername" name="username" type="text" placeholder="Choose a username" required>
+                        </label>
+
+                        <label class="field">
+                            <span>Password</span>
+                            <input id="adminSetupPassword" name="password" type="password" placeholder="Create a password" required>
+                        </label>
+
+                        <label class="field">
+                            <span>Confirm password</span>
+                            <input id="adminSetupConfirmPassword" name="confirm_password" type="password" placeholder="Repeat the password" required>
+                        </label>
+
+                        <button type="submit" class="primary-button">Save credentials</button>
+                    </form>
+                    <p id="adminSetupMessage" class="form-note" aria-live="polite"></p>
+                </section>
+            </article>
+        </section>
+    </main>
+
+    <main class="dashboard" id="adminDashboard" hidden>
+        <header class="dashboard-bar">
+            <div>
+                <p class="eyebrow">Admin portal</p>
+                <h1>School Management System</h1>
+            </div>
+            <div class="dashboard-actions">
+                <span class="admin-badge">Admin signed in</span>
+                <button class="ghost-button" id="logoutBtn" type="button">Log out</button>
+            </div>
+        </header>
+
+        <section class="dashboard-grid">
+            <section class="summary-grid" aria-label="Performance summary">
+                <article class="summary-card">
+                    <span>Total students</span>
+                    <strong id="studentCount">0</strong>
+                </article>
+                <article class="summary-card">
+                    <span>Average percentage</span>
+                    <strong id="averageScore">0%</strong>
+                </article>
+                <article class="summary-card">
+                    <span>Top performer</span>
+                    <strong id="topperName">-</strong>
+                </article>
+            </section>
+
+            <article class="table-card photo-card">
+                <div class="table-head">
+                    <div>
+                        <p class="eyebrow">Event photos</p>
+                        <h2>Upload school event photos</h2>
+                    </div>
+                    <button type="button" class="ghost-button" id="togglePhotoUploaderBtn">Add photos</button>
+                </div>
+                <p class="form-note">
+                    Upload one or more photos from a school event. Students can view them from their portal.
+                </p>
+                <form id="eventPhotoForm" class="photo-uploader" hidden enctype="multipart/form-data">
+                    <label class="field">
+                        <span>Event title</span>
+                        <input id="eventPhotoTitle" name="title" type="text" placeholder="Annual sports day">
+                    </label>
+
+                    <label class="field">
+                        <span>Photo files</span>
+                        <input id="eventPhotoFiles" name="photos" type="file" accept="image/*" multiple required>
+                    </label>
+
+                    <button type="submit" class="primary-button">Upload photos</button>
+                </form>
+                <p id="eventPhotoMessage" class="form-note" aria-live="polite"></p>
+            </article>
+
+            <article class="table-card">
+                <div class="table-head">
+                    <div>
+                        <p class="eyebrow">Admin records</p>
+                        <h2>Add or update student</h2>
+                    </div>
+                    <p id="adminStatus" class="form-note" aria-live="polite"></p>
+                </div>
+
+                <form id="studentForm" class="student-form">
+                    <label class="field">
+                        <span>Roll number</span>
+                        <input id="studentRollNo" name="roll_no" type="number" min="1" placeholder="104" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Name</span>
+                        <input id="studentName" name="name" type="text" placeholder="Student name" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Class</span>
+                        <input id="studentClass" name="class" type="text" placeholder="10A" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Maths</span>
+                        <input id="studentMaths" name="maths" type="number" min="0" max="100" placeholder="90" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Science</span>
+                        <input id="studentScience" name="science" type="number" min="0" max="100" placeholder="85" required>
+                    </label>
+
+                    <label class="field">
+                        <span>English</span>
+                        <input id="studentEnglish" name="english" type="number" min="0" max="100" placeholder="88" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Kannada</span>
+                        <input id="studentKannada" name="kannada" type="number" min="0" max="100" placeholder="91" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Social Science</span>
+                        <input id="studentSocialScience" name="social_science" type="number" min="0" max="100" placeholder="86" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Hindi</span>
+                        <input id="studentHindi" name="hindi" type="number" min="0" max="100" placeholder="89" required>
+                    </label>
+
+                    <button type="submit" class="primary-button">Save student</button>
+                    <button type="button" class="ghost-button" id="clearStudentFormBtn">Clear form</button>
+                </form>
+                <p class="form-note">Updating an existing roll number replaces the record.</p>
+                <p id="studentFormMessage" class="form-note" aria-live="polite"></p>
+            </article>
+
+            <article class="table-card">
+                <div class="table-head">
+                    <div>
+                        <p class="eyebrow">All records</p>
+                        <h2>Student list</h2>
+                    </div>
+                    <p id="tableStatus" class="form-note" aria-live="polite"></p>
+                </div>
+
+                <div class="table-wrap">
+                    <table id="studentTable">
+                        <thead>
+                            <tr>
+                                <th>Roll No</th>
+                                <th>Name</th>
+                                <th>Class</th>
+                                <th>Maths</th>
+                                <th>Science</th>
+                                <th>English</th>
+                                <th>Kannada</th>
+                                <th>Social Science</th>
+                                <th>Hindi</th>
+                                <th>Total</th>
+                                <th>Percentage</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
