@@ -368,7 +368,7 @@ def admin_login():
     if username == credentials["username"] and check_password_hash(credentials["password_hash"], password):
         session["admin_logged_in"] = True
         session["admin_username"] = credentials["username"]
-        return jsonify({"ok": True, "message": "Admin login successful."})
+        return jsonify({"ok": True, "message": "Admin login successful.", "username": credentials["username"]})
 
     return jsonify({"ok": False, "message": "Invalid admin username or password."}), 401
 
@@ -401,7 +401,14 @@ def admin_credentials():
     session["admin_username"] = username
 
     action = "created" if credentials is None else "updated"
-    return jsonify({"ok": True, "message": f"Admin credentials {action} successfully.", "logged_in": True})
+    return jsonify(
+        {
+            "ok": True,
+            "message": f"Admin credentials {action} successfully.",
+            "logged_in": True,
+            "username": username,
+        }
+    )
 
 
 @app.route("/api/admin/logout", methods=["POST"])
@@ -525,12 +532,48 @@ def save_student():
     )
 
 
+@app.route("/api/admin/students/<int:roll_no>", methods=["DELETE"])
+def delete_student(roll_no):
+    if not session.get("admin_logged_in"):
+        return jsonify({"ok": False, "message": "Admin login required."}), 403
+
+    students = load_students()
+    remaining_students = []
+    deleted_student = None
+
+    for student in students:
+        try:
+            if deleted_student is None and int(student.get("roll_no", -1)) == roll_no:
+                deleted_student = student
+                continue
+        except (TypeError, ValueError):
+            pass
+
+        remaining_students.append(student)
+
+    if deleted_student is None:
+        return jsonify({"ok": False, "message": "Student not found."}), 404
+
+    remaining_students = sorted(remaining_students, key=lambda item: int(item.get("roll_no", 0)))
+    save_students(remaining_students)
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": f"Student roll number {roll_no} deleted successfully.",
+            "student": deleted_student,
+            "students": remaining_students,
+        }
+    )
+
+
 @app.route("/api/admin/status")
 def admin_status():
     return jsonify(
         {
             "logged_in": bool(session.get("admin_logged_in")),
             "configured": admin_is_configured(),
+            "username": session.get("admin_username", "") if session.get("admin_logged_in") else "",
         }
     )
 

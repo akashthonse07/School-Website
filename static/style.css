@@ -467,6 +467,21 @@ main {
     background: rgba(255, 255, 255, 0.08);
 }
 
+.credential-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 4px;
+}
+
+.credential-form .field {
+    min-width: 0;
+}
+
+.credential-form .primary-button {
+    grid-column: 1 / -1;
+}
+
 .photo-card,
 .gallery-card {
     display: flex;
@@ -556,6 +571,12 @@ main {
     padding: 12px 14px 14px;
 }
 
+.gallery-item-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
 .gallery-item strong {
     font-size: 0.98rem;
     line-height: 1.35;
@@ -581,6 +602,25 @@ main {
     transform: translateY(-1px);
     background: rgba(77, 224, 169, 0.14);
     border-color: rgba(77, 224, 169, 0.35);
+}
+
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.row-action.is-danger,
+.photo-delete-button {
+    border-color: rgba(255, 108, 108, 0.3);
+    background: rgba(255, 108, 108, 0.12);
+    color: #ffd6d6;
+}
+
+.row-action.is-danger:hover,
+.photo-delete-button:hover {
+    background: rgba(255, 108, 108, 0.2);
+    border-color: rgba(255, 108, 108, 0.48);
 }
 
 .auth-card .muted,
@@ -771,6 +811,17 @@ main {
     padding: 24px;
 }
 
+.credential-card {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.shared-gallery {
+    width: min(1180px, calc(100% - 32px));
+    margin: 20px auto 56px;
+}
+
 .table-head {
     display: flex;
     align-items: flex-start;
@@ -902,7 +953,8 @@ tbody tr:hover {
 
     .result-grid,
     .result-summary,
-    .student-form {
+    .student-form,
+    .credential-form {
         grid-template-columns: 1fr;
     }
 
@@ -937,6 +989,11 @@ tbody tr:hover {
     .dashboard-bar {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .shared-gallery {
+        width: min(100% - 20px, 1180px);
+        margin: 16px auto 40px;
     }
 
     .table-head {
