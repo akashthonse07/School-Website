@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>School Management System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="aurora aurora-one"></div>
@@ -14,18 +14,16 @@
     <main class="login-shell" id="entryShell">
         <section class="login-story">
             <p class="eyebrow">School portal</p>
-            <h1>ಸರಕಾರಿ ಹಿರಿಯ ಪ್ರಾಥಮಿಕ ಶಾಲೆ ಪರ್ಕಳ</h1>
+            <h1> ಸರ್ಕಾರಿ ಪ್ರೌಢಶಾಲೆ ಉಪ್ಪೂರು ಕೊಳಲಗಿರಿ</h1>
             <p class="intro">
-                Manage student marks and let students check their own results with a polished,
-                animated portal that feels alive instead of static.
-            </p>
+                ಶಿಸ್ತು - ಶಿಕ್ಷಣ - ಸಂಸ್ಕಾರ</p>
 
             <div class="image-stack" aria-label="School and student photos">
                 <figure class="photo-frame large">
-                    <img src="{{ url_for('static', filename='assets/school-campus-clean.jpg') }}" alt="School campus building">
+                    <img src="/static/assets/School-Building.jpeg" >
                 </figure>
                 <figure class="photo-frame small">
-                    <img src="{{ url_for('static', filename='assets/students-group-clean.jpg') }}" alt="Students gathered on campus">
+                    <img src="/static/assets/SCHOOL.jpeg" alt="Building">
 
                 </figure>
             </div>
@@ -68,7 +66,7 @@
 
                     <div class="button-row">
                         <button type="submit" class="primary-button">View result</button>
-                        <button type="button" class="ghost-button" id="viewEventPhotosBtn">View photos</button>
+                        <button type="button" class="ghost-button" id="studentViewEventPhotosBtn" data-view-event-photos aria-expanded="false" aria-controls="eventPhotoGallery">View photos</button>
                     </div>
                 </form>
                 <p id="lookupMessage" class="form-note" aria-live="polite"></p>
@@ -124,18 +122,6 @@
                             <strong id="resultGrade">-</strong>
                         </div>
                     </div>
-                </section>
-
-                <section id="eventPhotoGallery" class="gallery-card" hidden>
-                    <div class="gallery-head">
-                        <div>
-                            <p class="eyebrow">Event gallery</p>
-                            <h3>School event photos</h3>
-                        </div>
-                        <span class="result-chip" id="photoCount">0 photos</span>
-                    </div>
-                    <p id="photoMessage" class="form-note" aria-live="polite"></p>
-                    <div id="photoGrid" class="gallery-grid"></div>
                 </section>
             </article>
 
@@ -194,11 +180,14 @@
     <main class="dashboard" id="adminDashboard" hidden>
         <header class="dashboard-bar">
             <div>
-                <p class="eyebrow">Admin portal</p>
-                <h1>School Management System</h1>
+                <p class="eyebrow">Teacher portal</p>
+                <h1>ಸರ್ಕಾರಿ ಪ್ರೌಢಶಾಲೆ ಉಪ್ಪೂರು ಕೊಳಲಗಿರಿ</h1>
             </div>
             <div class="dashboard-actions">
-                <span class="admin-badge">Admin signed in</span>
+                <span class="admin-badge" id="adminBadge">Teacher signed in</span>
+                <button class="ghost-button" id="toggleAdminCredentialsBtn" type="button" aria-expanded="false" aria-controls="adminCredentialsPanel">
+                    Change credentials
+                </button>
                 <button class="ghost-button" id="logoutBtn" type="button">Log out</button>
             </div>
         </header>
@@ -223,13 +212,18 @@
                 <div class="table-head">
                     <div>
                         <p class="eyebrow">Event photos</p>
-                        <h2>Upload school event photos</h2>
+                        <h2>School event gallery</h2>
                     </div>
-                    <button type="button" class="ghost-button" id="togglePhotoUploaderBtn">Add photos</button>
+                    <div class="button-row">
+                        <button type="button" class="ghost-button" id="togglePhotoUploaderBtn" aria-expanded="false" aria-controls="eventPhotoForm">Add photos</button>
+                        <button type="button" class="ghost-button" id="viewEventPhotosBtn" data-view-event-photos aria-expanded="false" aria-controls="eventPhotoGallery">View photos</button>
+                    </div>
                 </div>
+
                 <p class="form-note">
-                    Upload one or more photos from a school event. Students can view them from their portal.
+                    Upload one or more photos from school events like sports day, assemblies, and celebrations.
                 </p>
+
                 <form id="eventPhotoForm" class="photo-uploader" hidden enctype="multipart/form-data">
                     <label class="field">
                         <span>Event title</span>
@@ -243,13 +237,47 @@
 
                     <button type="submit" class="primary-button">Upload photos</button>
                 </form>
+
                 <p id="eventPhotoMessage" class="form-note" aria-live="polite"></p>
+            </article>
+
+            <article id="adminCredentialsPanel" class="table-card credential-card" hidden>
+                <div class="table-head">
+                    <div>
+                        <p class="eyebrow">Account settings</p>
+                        <h2>Change admin credentials</h2>
+                    </div>
+                    <p id="adminCredentialsMessage" class="form-note" aria-live="polite"></p>
+                </div>
+
+                <p class="muted">
+                    Update the username or password for the signed-in admin account. Use the same username if you only want to change the password.
+                </p>
+
+                <form id="adminCredentialsForm" class="auth-form credential-form" autocomplete="off">
+                    <label class="field">
+                        <span>Username</span>
+                        <input id="adminCredentialsUsername" name="username" type="text" placeholder="Current username" required>
+                    </label>
+
+                    <label class="field">
+                        <span>New password</span>
+                        <input id="adminCredentialsPassword" name="password" type="password" placeholder="New password" required>
+                    </label>
+
+                    <label class="field">
+                        <span>Confirm new password</span>
+                        <input id="adminCredentialsConfirmPassword" name="confirm_password" type="password" placeholder="Repeat the new password" required>
+                    </label>
+
+                    <button type="submit" class="primary-button">Save new credentials</button>
+                </form>
             </article>
 
             <article class="table-card">
                 <div class="table-head">
                     <div>
-                        <p class="eyebrow">Admin records</p>
+                        <p class="eyebrow">Teacher records</p>
                         <h2>Add or update student</h2>
                     </div>
                     <p id="adminStatus" class="form-note" aria-live="polite"></p>
@@ -258,47 +286,47 @@
                 <form id="studentForm" class="student-form">
                     <label class="field">
                         <span>Roll number</span>
-                        <input id="studentRollNo" name="roll_no" type="number" min="1" placeholder="104" required>
+                        <input id="studentRollNo" name="roll_no" type="number" min="1" placeholder="104" >
                     </label>
 
                     <label class="field">
                         <span>Name</span>
-                        <input id="studentName" name="name" type="text" placeholder="Student name" required>
+                        <input id="studentName" name="name" type="text" placeholder="Student name" >
                     </label>
 
                     <label class="field">
                         <span>Class</span>
-                        <input id="studentClass" name="class" type="text" placeholder="10A" required>
+                        <input id="studentClass" name="class" type="text" placeholder="10A" >
                     </label>
 
                     <label class="field">
                         <span>Maths</span>
-                        <input id="studentMaths" name="maths" type="number" min="0" max="100" placeholder="90" required>
+                        <input id="studentMaths" name="maths" type="number" min="0" max="100" placeholder="90" >
                     </label>
 
                     <label class="field">
                         <span>Science</span>
-                        <input id="studentScience" name="science" type="number" min="0" max="100" placeholder="85" required>
+                        <input id="studentScience" name="science" type="number" min="0" max="100" placeholder="85" >
                     </label>
 
                     <label class="field">
                         <span>English</span>
-                        <input id="studentEnglish" name="english" type="number" min="0" max="100" placeholder="88" required>
+                        <input id="studentEnglish" name="english" type="number" min="0" max="100" placeholder="88" >
                     </label>
 
                     <label class="field">
                         <span>Kannada</span>
-                        <input id="studentKannada" name="kannada" type="number" min="0" max="100" placeholder="91" required>
+                        <input id="studentKannada" name="kannada" type="number" min="0" max="100" placeholder="91" >
                     </label>
 
                     <label class="field">
                         <span>Social Science</span>
-                        <input id="studentSocialScience" name="social_science" type="number" min="0" max="100" placeholder="86" required>
+                        <input id="studentSocialScience" name="social_science" type="number" min="0" max="100" placeholder="86" >
                     </label>
 
                     <label class="field">
                         <span>Hindi</span>
-                        <input id="studentHindi" name="hindi" type="number" min="0" max="100" placeholder="89" required>
+                        <input id="studentHindi" name="hindi" type="number" min="0" max="100" placeholder="89" >
                     </label>
 
                     <button type="submit" class="primary-button">Save student</button>
@@ -342,6 +370,18 @@
         </section>
     </main>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <section id="eventPhotoGallery" class="table-card gallery-card shared-gallery" hidden>
+        <div class="gallery-head">
+            <div>
+                <p class="eyebrow">Event gallery</p>
+                <h3>School event photos</h3>
+            </div>
+            <span class="result-chip" id="photoCount">0 photos</span>
+        </div>
+        <p id="photoMessage" class="form-note" aria-live="polite"></p>
+        <div id="photoGrid" class="gallery-grid"></div>
+    </section>
+
+    <script src="/static/script.js"></script>
 </body>
 </html>
