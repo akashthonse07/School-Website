@@ -1,0 +1,34 @@
+[
+  {
+    "class": "7",
+    "maths": "",
+    "science": "",
+    "english": "",
+    "kannada": "",
+    "social_science": "",
+    "hindi": "",
+    "pdfs": {
+      "maths": {
+        "original_filename": "Book1.pdf",
+        "stored_filename": "c4533584938a467398bbe476a71095e3.pdf",
+        "url": "/static/uploads/syllabus-pdfs/c4533584938a467398bbe476a71095e3.pdf"
+      }
+    }
+  },
+  {
+    "class": "8",
+    "maths": "",
+    "science": "",
+    "english": "",
+    "kannada": "",
+    "social_science": "",
+    "hindi": "",
+    "pdfs": {
+      "maths": {
+        "original_filename": "Garodi_Reciept.pdf",
+        "stored_filename": "cc6607cf3e34492d97245170d1df98e0.pdf",
+        "url": "/static/uploads/syllabus-pdfs/cc6607cf3e34492d97245170d1df98e0.pdf"
+      }
+    }
+  }
+]

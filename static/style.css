@@ -483,16 +483,98 @@ main {
 }
 
 .photo-card,
-.gallery-card {
+.gallery-card,
+.syllabus-card {
     display: flex;
     flex-direction: column;
     gap: 14px;
 }
 
-.photo-uploader {
+.photo-uploader,
+.syllabus-form {
     display: flex;
     flex-direction: column;
     gap: 14px;
+}
+
+.syllabus-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.syllabus-form .class-field,
+.syllabus-form .primary-button {
+    grid-column: 1 / -1;
+}
+
+.syllabus-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+}
+
+.syllabus-item {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.syllabus-item h4 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.syllabus-subjects {
+    display: grid;
+    gap: 10px;
+}
+
+.syllabus-subject {
+    display: grid;
+    gap: 4px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.syllabus-subject strong {
+    font-size: 0.9rem;
+}
+
+.syllabus-subject p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.file-field-label {
+    margin-top: 4px;
+    font-size: 0.82rem;
+}
+
+.syllabus-class-filter {
+    max-width: 340px;
+}
+
+.syllabus-pdf-link {
+    width: fit-content;
+    margin-top: 4px;
+    border: 1px solid rgba(77, 224, 169, 0.35);
+    border-radius: 999px;
+    padding: 7px 10px;
+    color: var(--accent);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.syllabus-pdf-link:hover {
+    border-color: rgba(77, 224, 169, 0.7);
+    background: rgba(77, 224, 169, 0.1);
 }
 
 .field input[type="file"] {
@@ -645,7 +727,9 @@ main {
     letter-spacing: 0.02em;
 }
 
-.field input {
+.field input,
+.field textarea,
+.field select {
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 18px;
     padding: 15px 16px;
@@ -655,11 +739,19 @@ main {
     transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
 }
 
-.field input::placeholder {
+.field textarea {
+    min-height: 116px;
+    resize: vertical;
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
     color: rgba(167, 183, 204, 0.7);
 }
 
-.field input:focus {
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
     border-color: rgba(77, 224, 169, 0.75);
     box-shadow: 0 0 0 4px rgba(77, 224, 169, 0.15);
     transform: translateY(-1px);
@@ -954,7 +1046,8 @@ tbody tr:hover {
     .result-grid,
     .result-summary,
     .student-form,
-    .credential-form {
+    .credential-form,
+    .syllabus-form {
         grid-template-columns: 1fr;
     }
 

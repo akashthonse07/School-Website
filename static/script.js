@@ -1,4 +1,6 @@
 const ADMIN_SESSION_KEY = 'schoolAdminAccess';
+const ADMIN_EMAIL = 'akashthonse8@gmail.com';
+const ADMIN_PASSWORD = 'akash8217';
 
 const entryShell = document.getElementById('entryShell');
 const adminDashboard = document.getElementById('adminDashboard');
@@ -69,6 +71,28 @@ const eventPhotoForm = document.getElementById('eventPhotoForm');
 const eventPhotoTitle = document.getElementById('eventPhotoTitle');
 const eventPhotoFiles = document.getElementById('eventPhotoFiles');
 const eventPhotoMessage = document.getElementById('eventPhotoMessage');
+const syllabusButtons = document.querySelectorAll('[data-view-syllabus]');
+const toggleSyllabusFormBtn = document.getElementById('toggleSyllabusFormBtn');
+const syllabusForm = document.getElementById('syllabusForm');
+const syllabusClass = document.getElementById('syllabusClass');
+const syllabusMaths = document.getElementById('syllabusMaths');
+const syllabusScience = document.getElementById('syllabusScience');
+const syllabusEnglish = document.getElementById('syllabusEnglish');
+const syllabusKannada = document.getElementById('syllabusKannada');
+const syllabusSocialScience = document.getElementById('syllabusSocialScience');
+const syllabusHindi = document.getElementById('syllabusHindi');
+const syllabusMathsPdf = document.getElementById('syllabusMathsPdf');
+const syllabusSciencePdf = document.getElementById('syllabusSciencePdf');
+const syllabusEnglishPdf = document.getElementById('syllabusEnglishPdf');
+const syllabusKannadaPdf = document.getElementById('syllabusKannadaPdf');
+const syllabusSocialSciencePdf = document.getElementById('syllabusSocialSciencePdf');
+const syllabusHindiPdf = document.getElementById('syllabusHindiPdf');
+const syllabusFormMessage = document.getElementById('syllabusFormMessage');
+const syllabusViewer = document.getElementById('syllabusViewer');
+const syllabusCount = document.getElementById('syllabusCount');
+const syllabusClassFilter = document.getElementById('syllabusClassFilter');
+const syllabusMessage = document.getElementById('syllabusMessage');
+const syllabusGrid = document.getElementById('syllabusGrid');
 
 const subjectFields = [
     { key: 'maths', input: studentMaths, result: resultMaths },
@@ -80,6 +104,14 @@ const subjectFields = [
 ];
 const subjectCount = subjectFields.length;
 const tableColumnCount = 3 + subjectCount + 3;
+const syllabusFields = [
+    { key: 'maths', label: 'Maths', input: syllabusMaths, pdfInput: syllabusMathsPdf },
+    { key: 'science', label: 'Science', input: syllabusScience, pdfInput: syllabusSciencePdf },
+    { key: 'english', label: 'English', input: syllabusEnglish, pdfInput: syllabusEnglishPdf },
+    { key: 'kannada', label: 'Kannada', input: syllabusKannada, pdfInput: syllabusKannadaPdf },
+    { key: 'social_science', label: 'Social Science', input: syllabusSocialScience, pdfInput: syllabusSocialSciencePdf },
+    { key: 'hindi', label: 'Hindi', input: syllabusHindi, pdfInput: syllabusHindiPdf },
+];
 
 const SERVER_MODE = 'server';
 const LOCAL_MODE = 'local';
@@ -87,7 +119,7 @@ const nativeFetch = window.fetch.bind(window);
 const LOCAL_STORAGE_KEYS = {
     students: 'schoolPortalLocalStudents',
     eventPhotos: 'schoolPortalLocalEventPhotos',
-    adminCredentials: 'schoolPortalLocalAdminCredentials',
+    syllabus: 'schoolPortalLocalSyllabus',
 };
 const LOCAL_SEED_STUDENTS = [
     {
@@ -224,44 +256,78 @@ function saveLocalEventPhotos(photos) {
     return nextPhotos;
 }
 
+function syllabusClassKey(className) {
+    return String(className || '').trim().toLowerCase();
+}
+
+function normalizeLocalSyllabusEntry(entry) {
+    const className = String(entry?.class || '').trim();
+    if (!className) {
+        return null;
+    }
+
+    const normalized = {
+        class: className,
+    };
+    syllabusFields.forEach((field) => {
+        normalized[field.key] = String(entry?.[field.key] || '').trim();
+    });
+
+    const pdfs = {};
+    const rawPdfs = entry?.pdfs;
+    if (rawPdfs && typeof rawPdfs === 'object') {
+        syllabusFields.forEach((field) => {
+            const rawPdf = rawPdfs[field.key];
+            const url = String(rawPdf?.url || '').trim();
+            if (!url) {
+                return;
+            }
+
+            pdfs[field.key] = {
+                original_filename: String(rawPdf.original_filename || `${field.label} syllabus.pdf`).trim(),
+                url,
+            };
+        });
+    }
+
+    if (Object.keys(pdfs).length) {
+        normalized.pdfs = pdfs;
+    }
+    return normalized;
+}
+
+function sortLocalSyllabus(syllabus) {
+    return [...syllabus].sort((left, right) => {
+        return syllabusClassKey(left.class).localeCompare(syllabusClassKey(right.class));
+    });
+}
+
+function getLocalSyllabus() {
+    const stored = readLocalJson(LOCAL_STORAGE_KEYS.syllabus);
+    if (Array.isArray(stored)) {
+        return sortLocalSyllabus(stored.map(normalizeLocalSyllabusEntry).filter(Boolean));
+    }
+
+    writeLocalJson(LOCAL_STORAGE_KEYS.syllabus, []);
+    return [];
+}
+
+function saveLocalSyllabus(syllabus) {
+    const normalized = sortLocalSyllabus(syllabus.map(normalizeLocalSyllabusEntry).filter(Boolean));
+    writeLocalJson(LOCAL_STORAGE_KEYS.syllabus, normalized);
+    return normalized;
+}
+
+function normalizeEmail(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
 function getLocalAdminCredentials() {
-    const stored = readLocalJson(LOCAL_STORAGE_KEYS.adminCredentials);
-    if (!stored || typeof stored !== 'object') {
-        return {
-            configured: false,
-            username: '',
-            passwordHash: '',
-        };
-    }
-
     return {
-        configured: Boolean(stored.configured && stored.username && stored.passwordHash),
-        username: String(stored.username || '').trim(),
-        passwordHash: String(stored.passwordHash || ''),
-    };
-}
-
-async function hashLocalPassword(password) {
-    const text = String(password);
-    if (window.crypto && window.crypto.subtle && window.isSecureContext) {
-        const encoded = new TextEncoder().encode(text);
-        const digest = await window.crypto.subtle.digest('SHA-256', encoded);
-        const bytes = Array.from(new Uint8Array(digest));
-        return btoa(String.fromCharCode(...bytes));
-    }
-
-    return `plain:${text}`;
-}
-
-async function setLocalAdminCredentials(username, password) {
-    const credentials = {
         configured: true,
-        username: String(username).trim(),
-        passwordHash: await hashLocalPassword(password),
+        username: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
     };
-
-    writeLocalJson(LOCAL_STORAGE_KEYS.adminCredentials, credentials);
-    return credentials;
 }
 
 function getLocalAdminStatus() {
@@ -297,6 +363,18 @@ async function parseLocalPayload(request) {
     return {};
 }
 
+function readLocalPayloadValue(payload, key) {
+    return payload instanceof FormData ? payload.get(key) : payload[key];
+}
+
+function isPdfAttachment(file) {
+    if (!(file instanceof File) || file.size <= 0) {
+        return false;
+    }
+
+    return file.type === 'application/pdf' || String(file.name || '').toLowerCase().endsWith('.pdf');
+}
+
 async function handleLocalApiRequest(input, init = {}) {
     const request = input instanceof Request ? input : new Request(input, init);
     const url = new URL(request.url, window.location.origin);
@@ -322,64 +400,36 @@ async function handleLocalApiRequest(input, init = {}) {
 
     if (pathname === '/api/admin/login' && method === 'POST') {
         const payload = await parseLocalPayload(request);
-        const username = String(payload.username || '').trim();
+        const username = String(payload.email || payload.username || '').trim();
+        const email = normalizeEmail(username);
         const password = String(payload.password || '');
         const credentials = getLocalAdminCredentials();
 
-        if (!credentials.configured) {
-            return jsonResponse({ ok: false, message: 'No admin credentials have been created yet.' }, 400);
+        if (email !== normalizeEmail(credentials.username)) {
+            sessionStorage.removeItem(ADMIN_SESSION_KEY);
+            return jsonResponse({
+                ok: true,
+                role: 'student',
+                message: 'Student portal opened. Admin access is only for the approved email.',
+            });
         }
 
-        const passwordHash = await hashLocalPassword(password);
-        if (username === credentials.username && passwordHash === credentials.passwordHash) {
+        if (password === credentials.password) {
             sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
             return jsonResponse({
                 ok: true,
+                role: 'admin',
                 message: 'Admin login successful.',
                 username: credentials.username,
             });
         }
 
-        return jsonResponse({ ok: false, message: 'Invalid admin username or password.' }, 401);
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        return jsonResponse({ ok: false, message: 'Invalid admin email or password.' }, 401);
     }
 
     if (pathname === '/api/admin/credentials' && method === 'POST') {
-        const payload = await parseLocalPayload(request);
-        const username = String(payload.username || '').trim();
-        const password = String(payload.password || '');
-        const confirmPassword = String(payload.confirm_password || '');
-        const credentials = getLocalAdminCredentials();
-
-        if (!username || !password || !confirmPassword) {
-            return jsonResponse({ ok: false, message: 'Please complete every credential field.' }, 400);
-        }
-
-        if (username.length < 3) {
-            return jsonResponse({ ok: false, message: 'Username must be at least 3 characters long.' }, 400);
-        }
-
-        if (password.length < 6) {
-            return jsonResponse({ ok: false, message: 'Password must be at least 6 characters long.' }, 400);
-        }
-
-        if (password !== confirmPassword) {
-            return jsonResponse({ ok: false, message: 'Passwords do not match.' }, 400);
-        }
-
-        if (credentials.configured && sessionStorage.getItem(ADMIN_SESSION_KEY) !== '1') {
-            return jsonResponse({ ok: false, message: 'Admin login required to change credentials.' }, 403);
-        }
-
-        const nextCredentials = await setLocalAdminCredentials(username, password);
-        sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
-        currentAdminUsername = nextCredentials.username;
-
-        return jsonResponse({
-            ok: true,
-            message: `Admin credentials ${credentials.configured ? 'updated' : 'created'} successfully.`,
-            logged_in: true,
-            username: nextCredentials.username,
-        });
+        return jsonResponse({ ok: false, message: 'Admin credentials are fixed for this portal.' }, 403);
     }
 
     if (pathname === '/api/admin/logout' && method === 'POST') {
@@ -390,6 +440,75 @@ async function handleLocalApiRequest(input, init = {}) {
 
     if (pathname === '/api/event-photos' && method === 'GET') {
         return jsonResponse(getLocalEventPhotos());
+    }
+
+    if (pathname === '/api/syllabus' && method === 'GET') {
+        return jsonResponse(getLocalSyllabus());
+    }
+
+    if (pathname === '/api/admin/syllabus' && method === 'POST') {
+        if (sessionStorage.getItem(ADMIN_SESSION_KEY) !== '1') {
+            return jsonResponse({ ok: false, message: 'Admin login required.' }, 403);
+        }
+
+        const payload = await parseLocalPayload(request);
+        const syllabusEntry = {
+            class: String(readLocalPayloadValue(payload, 'class') || '').trim(),
+        };
+        syllabusFields.forEach((field) => {
+            const subjectSyllabus = String(readLocalPayloadValue(payload, field.key) || '').trim();
+            if (subjectSyllabus) {
+                syllabusEntry[field.key] = subjectSyllabus;
+            }
+        });
+
+        if (!syllabusEntry.class) {
+            return jsonResponse({ ok: false, message: 'Class is required.' }, 400);
+        }
+
+        const syllabus = getLocalSyllabus();
+        const existingIndex = syllabus.findIndex((entry) => syllabusClassKey(entry.class) === syllabusClassKey(syllabusEntry.class));
+        const existingPdfs = existingIndex === -1 ? {} : { ...(syllabus[existingIndex].pdfs || {}) };
+        let hasNewAttachment = false;
+
+        for (const field of syllabusFields) {
+            const attachment = readLocalPayloadValue(payload, `${field.key}_pdf`);
+            if (!(attachment instanceof File) || attachment.size <= 0) {
+                continue;
+            }
+
+            if (!isPdfAttachment(attachment)) {
+                return jsonResponse({ ok: false, message: `The ${field.label} attachment must be a PDF file.` }, 400);
+            }
+
+            existingPdfs[field.key] = {
+                original_filename: attachment.name || `${field.label} syllabus.pdf`,
+                url: await readFileAsDataUrl(attachment),
+            };
+            hasNewAttachment = true;
+        }
+
+        if (Object.keys(syllabusEntry).length === 1 && !hasNewAttachment) {
+            return jsonResponse({ ok: false, message: 'Add at least one subject syllabus or PDF attachment before saving.' }, 400);
+        }
+
+        if (Object.keys(existingPdfs).length) {
+            syllabusEntry.pdfs = existingPdfs;
+        }
+
+        if (existingIndex === -1) {
+            syllabus.push(syllabusEntry);
+        } else {
+            syllabus[existingIndex] = syllabusEntry;
+        }
+
+        const nextSyllabus = saveLocalSyllabus(syllabus);
+        return jsonResponse({
+            ok: true,
+            message: `Syllabus for class ${syllabusEntry.class} ${existingIndex === -1 ? 'added' : 'updated'} successfully.`,
+            syllabus: nextSyllabus,
+            entry: syllabusEntry,
+        });
     }
 
     if (pathname === '/api/admin/event-photos' && method === 'POST') {
@@ -547,9 +666,9 @@ window.fetch = async function fetchWithLocalFallback(input, init) {
 };
 
 let studentsCache = null;
+let syllabusCache = [];
 let lastLookupRollNo = null;
 let activeAccessRole = 'student';
-let adminCredentialsConfigured = false;
 let currentAdminUsername = '';
 
 function escapeHtml(value) {
@@ -636,6 +755,14 @@ function setEventPhotoMessage(message) {
     eventPhotoMessage.textContent = message;
 }
 
+function setSyllabusFormMessage(message) {
+    if (!syllabusFormMessage) {
+        return;
+    }
+
+    syllabusFormMessage.textContent = message;
+}
+
 function setPhotoGalleryMessage(message) {
     if (!photoMessage) {
         return;
@@ -644,8 +771,22 @@ function setPhotoGalleryMessage(message) {
     photoMessage.textContent = message;
 }
 
+function setSyllabusMessage(message) {
+    if (!syllabusMessage) {
+        return;
+    }
+
+    syllabusMessage.textContent = message;
+}
+
 function setEventPhotoGalleryButtonsExpanded(isExpanded) {
     eventPhotoButtons.forEach((button) => {
+        button.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    });
+}
+
+function setSyllabusButtonsExpanded(isExpanded) {
+    syllabusButtons.forEach((button) => {
         button.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
     });
 }
@@ -691,6 +832,36 @@ function closeEventPhotoGallery() {
     photoCount.textContent = '0 photos';
     setPhotoGalleryMessage('');
     setEventPhotoGalleryButtonsExpanded(false);
+}
+
+function resetSyllabusForm() {
+    if (!syllabusForm || !toggleSyllabusFormBtn) {
+        return;
+    }
+
+    syllabusForm.hidden = true;
+    syllabusForm.reset();
+    toggleSyllabusFormBtn.textContent = 'Add syllabus';
+    toggleSyllabusFormBtn.setAttribute('aria-expanded', 'false');
+    setSyllabusFormMessage('');
+}
+
+function closeSyllabusViewer() {
+    if (!syllabusViewer || !syllabusGrid || !syllabusCount) {
+        return;
+    }
+
+    syllabusViewer.hidden = true;
+    syllabusCache = [];
+    syllabusGrid.innerHTML = '';
+    syllabusCount.textContent = '0 classes';
+    if (syllabusClassFilter) {
+        syllabusClassFilter.innerHTML = '<option value="">Select a class</option>';
+        syllabusClassFilter.value = '';
+        syllabusClassFilter.disabled = true;
+    }
+    setSyllabusMessage('');
+    setSyllabusButtonsExpanded(false);
 }
 
 function resetAdminCredentialsPanel() {
@@ -742,16 +913,10 @@ function setAccessRole(role) {
     });
 }
 
-function setAdminAuthMode(configured) {
-    adminCredentialsConfigured = Boolean(configured);
-    adminLoginSection.hidden = !adminCredentialsConfigured;
-    adminSetupSection.hidden = adminCredentialsConfigured;
-
-    if (adminCredentialsConfigured) {
-        setAdminSetupMessage('');
-    } else {
-        setAdminLoginMessage('');
-    }
+function setAdminAuthMode() {
+    adminLoginSection.hidden = false;
+    adminSetupSection.hidden = true;
+    setAdminSetupMessage('');
 }
 
 function resetAdminMetrics() {
@@ -860,11 +1025,23 @@ function showLandingPage(defaultRole = 'student') {
     adminDashboard.hidden = true;
     resetEventPhotoUploader();
     closeEventPhotoGallery();
+    resetSyllabusForm();
+    closeSyllabusViewer();
     setAccessRole(defaultRole);
 }
 
 function hideLandingPage() {
     entryShell.hidden = true;
+}
+
+function openStudentOnlyPanel(message = '') {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    closeAdminDashboard();
+    showLandingPage('student');
+    adminPassword.value = '';
+    setAdminLoginMessage('');
+    setLookupMessage(message || 'Student portal opened for this email.');
+    studentAccessPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderEventPhotoGallery(photos) {
@@ -940,6 +1117,153 @@ async function openEventPhotoGallery(options = {}) {
 
     if (scroll) {
         eventPhotoGallery.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function renderSyllabus(syllabus) {
+    if (!syllabusGrid || !syllabusCount) {
+        return;
+    }
+
+    const entries = Array.isArray(syllabus) ? syllabus : [];
+    syllabusGrid.innerHTML = '';
+    syllabusCount.textContent = `${entries.length} class${entries.length === 1 ? '' : 'es'}`;
+
+    if (!entries.length) {
+        syllabusGrid.innerHTML = '<div class="empty-state">No class syllabus has been added yet.</div>';
+        setSyllabusMessage('The syllabus will appear here once the admin adds it.');
+        return;
+    }
+
+    setSyllabusMessage(`Showing the syllabus for ${entries.length} class${entries.length === 1 ? '' : 'es'}.`);
+
+    entries.forEach((entry, index) => {
+        const subjects = syllabusFields.map((field) => {
+            const pdf = entry?.pdfs?.[field.key];
+            const pdfLink = pdf?.url
+                ? `<a class="syllabus-pdf-link" href="${escapeHtml(pdf.url)}" target="_blank" rel="noopener" download="${escapeHtml(pdf.original_filename || `${field.label} syllabus.pdf`)}">Open ${escapeHtml(field.label)} PDF</a>`
+                : '';
+
+            return `
+                <div class="syllabus-subject">
+                    <strong>${escapeHtml(field.label)}</strong>
+                    <p>${escapeHtml(entry?.[field.key] || 'Not added yet')}</p>
+                    ${pdfLink}
+                </div>
+            `;
+        }).join('');
+        const card = document.createElement('article');
+        card.className = 'syllabus-item';
+        card.style.setProperty('--syllabus-index', index);
+        card.innerHTML = `
+            <p class="eyebrow">Class</p>
+            <h4>${escapeHtml(entry?.class || 'Unnamed class')}</h4>
+            <div class="syllabus-subjects">${subjects}</div>
+        `;
+        syllabusGrid.appendChild(card);
+    });
+}
+
+function setSyllabusClassFilter(syllabus, preferredClass = '') {
+    if (!syllabusClassFilter) {
+        return;
+    }
+
+    const previousClass = preferredClass || syllabusClassFilter.value;
+    const entries = Array.isArray(syllabus) ? syllabus : [];
+    syllabusClassFilter.innerHTML = '<option value="">Select a class</option>';
+
+    entries.forEach((entry) => {
+        const className = String(entry?.class || '').trim();
+        if (!className) {
+            return;
+        }
+
+        const option = document.createElement('option');
+        option.value = className;
+        option.textContent = className;
+        syllabusClassFilter.appendChild(option);
+    });
+
+    syllabusClassFilter.disabled = entries.length === 0;
+    const selectedEntry = entries.find((entry) => {
+        return syllabusClassKey(entry?.class) === syllabusClassKey(previousClass);
+    });
+    syllabusClassFilter.value = selectedEntry ? selectedEntry.class : '';
+}
+
+function renderSelectedSyllabus() {
+    if (!syllabusClassFilter) {
+        renderSyllabus(syllabusCache);
+        return;
+    }
+
+    const selectedClass = syllabusClassFilter.value;
+    if (!selectedClass) {
+        syllabusGrid.innerHTML = '<div class="empty-state">Select a class to view its syllabus.</div>';
+        syllabusCount.textContent = '0 classes';
+        setSyllabusMessage('Choose a class from the list above.');
+        return;
+    }
+
+    const selectedSyllabus = syllabusCache.filter((entry) => {
+        return syllabusClassKey(entry?.class) === syllabusClassKey(selectedClass);
+    });
+    renderSyllabus(selectedSyllabus);
+}
+
+async function loadSyllabus() {
+    const response = await fetch('/api/syllabus');
+    if (!response.ok) {
+        throw new Error('Unable to load the syllabus.');
+    }
+
+    return response.json();
+}
+
+async function openSyllabusViewer(options = {}) {
+    if (!syllabusViewer || !syllabusGrid || !syllabusCount || !syllabusMessage) {
+        return;
+    }
+
+    const scroll = options.scroll !== false;
+    syllabusViewer.hidden = false;
+    setSyllabusButtonsExpanded(true);
+
+    try {
+        syllabusCache = await loadSyllabus();
+        setSyllabusClassFilter(syllabusCache);
+        renderSelectedSyllabus();
+    } catch (error) {
+        console.error('Error loading syllabus:', error);
+        syllabusCache = [];
+        setSyllabusClassFilter([]);
+        syllabusGrid.innerHTML = '<div class="empty-state">Could not load the syllabus right now.</div>';
+        syllabusCount.textContent = '0 classes';
+        setSyllabusMessage('Could not load the syllabus right now.');
+    }
+
+    if (scroll) {
+        syllabusViewer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function toggleSyllabusForm() {
+    if (!syllabusForm || !toggleSyllabusFormBtn || !syllabusClass) {
+        return;
+    }
+
+    const shouldOpen = syllabusForm.hidden;
+    syllabusForm.hidden = !shouldOpen;
+    toggleSyllabusFormBtn.textContent = shouldOpen ? 'Hide form' : 'Add syllabus';
+    toggleSyllabusFormBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+
+    if (shouldOpen) {
+        syllabusClass.focus();
+        setSyllabusFormMessage('Add one or more subject syllabuses or PDFs. Saving an existing class keeps its other subjects.');
+    } else {
+        syllabusForm.reset();
+        setSyllabusFormMessage('');
     }
 }
 
@@ -1090,6 +1414,8 @@ async function openAdminDashboard(options = {}) {
     adminDashboard.hidden = false;
     resetEventPhotoUploader();
     closeEventPhotoGallery();
+    resetSyllabusForm();
+    closeSyllabusViewer();
     resetAdminCredentialsPanel();
     syncAdminIdentity(username || currentAdminUsername);
 
@@ -1121,6 +1447,8 @@ function closeAdminDashboard() {
     setAdminStatus('');
     resetEventPhotoUploader();
     closeEventPhotoGallery();
+    resetSyllabusForm();
+    closeSyllabusViewer();
     resetAdminCredentialsPanel();
     syncAdminIdentity('');
 }
@@ -1134,11 +1462,21 @@ roleButtons.forEach((button) => {
 adminLoginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
-    const username = adminUsername.value.trim();
+    const email = adminUsername.value.trim();
     const password = adminPassword.value.trim();
 
-    if (!username || !password) {
-        setAdminLoginMessage('Please enter both admin credentials.');
+    if (!email) {
+        setAdminLoginMessage('Please enter your email address.');
+        return;
+    }
+
+    if (normalizeEmail(email) !== normalizeEmail(ADMIN_EMAIL)) {
+        openStudentOnlyPanel('Student portal opened for this email.');
+        return;
+    }
+
+    if (!password) {
+        setAdminLoginMessage('Please enter the admin password.');
         return;
     }
 
@@ -1150,7 +1488,7 @@ adminLoginForm.addEventListener('submit', async (event) => {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({ email, username: email, password }),
         });
 
         const data = await response.json();
@@ -1160,8 +1498,13 @@ adminLoginForm.addEventListener('submit', async (event) => {
             return;
         }
 
+        if (data.role === 'student') {
+            openStudentOnlyPanel(data.message);
+            return;
+        }
+
         sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
-        await openAdminDashboard({ silent: true, scroll: true, username: data.username || username });
+        await openAdminDashboard({ silent: true, scroll: true, username: data.username || email });
         setAdminLoginMessage(data.message || 'Admin login successful.');
     } catch (error) {
         console.error('Admin login error:', error);
@@ -1398,6 +1741,97 @@ if (eventPhotoButtons.length && eventPhotoGallery && photoGrid && photoCount && 
     });
 }
 
+if (syllabusButtons.length && syllabusViewer && syllabusGrid && syllabusCount && syllabusMessage) {
+    syllabusButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+            await openSyllabusViewer({ scroll: true });
+        });
+    });
+}
+
+if (syllabusClassFilter) {
+    syllabusClassFilter.addEventListener('change', renderSelectedSyllabus);
+}
+
+if (toggleSyllabusFormBtn && syllabusForm) {
+    toggleSyllabusFormBtn.addEventListener('click', toggleSyllabusForm);
+}
+
+if (syllabusForm && syllabusClass && syllabusFormMessage) {
+    syllabusForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const payload = {
+            class: syllabusClass.value.trim(),
+        };
+        syllabusFields.forEach((field) => {
+            payload[field.key] = field.input.value.trim();
+        });
+
+        if (!payload.class) {
+            setSyllabusFormMessage('Please enter the class before saving.');
+            return;
+        }
+
+        const hasSubjectContent = syllabusFields.some((field) => {
+            return payload[field.key] || field.pdfInput?.files?.length;
+        });
+        if (!hasSubjectContent) {
+            setSyllabusFormMessage('Add at least one subject syllabus or PDF attachment before saving.');
+            return;
+        }
+
+        setSyllabusFormMessage('Saving syllabus...');
+
+        const formData = new FormData();
+        formData.append('class', payload.class);
+        for (const field of syllabusFields) {
+            formData.append(field.key, payload[field.key]);
+
+            const attachment = field.pdfInput?.files?.[0];
+            if (!attachment) {
+                continue;
+            }
+
+            if (!isPdfAttachment(attachment)) {
+                setSyllabusFormMessage(`The ${field.label} attachment must be a PDF file.`);
+                return;
+            }
+
+            formData.append(`${field.key}_pdf`, attachment);
+        }
+
+        try {
+            const response = await fetch('/api/admin/syllabus', {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                setSyllabusFormMessage(data.message || 'Unable to save the syllabus.');
+                return;
+            }
+
+            syllabusForm.reset();
+            syllabusForm.hidden = true;
+            toggleSyllabusFormBtn.textContent = 'Add syllabus';
+            toggleSyllabusFormBtn.setAttribute('aria-expanded', 'false');
+            setSyllabusFormMessage(data.message || 'Syllabus saved successfully.');
+            setAdminStatus(data.message || 'Syllabus saved successfully.');
+
+            if (syllabusViewer && !syllabusViewer.hidden) {
+                syllabusCache = Array.isArray(data.syllabus) ? data.syllabus : [];
+                setSyllabusClassFilter(syllabusCache, data.entry?.class || payload.class);
+                renderSelectedSyllabus();
+            }
+        } catch (error) {
+            console.error('Save syllabus error:', error);
+            setSyllabusFormMessage('Could not save the syllabus right now.');
+        }
+    });
+}
+
 if (eventPhotoForm && eventPhotoFiles && eventPhotoTitle && togglePhotoUploaderBtn) {
     eventPhotoForm.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -1524,12 +1958,7 @@ async function bootstrap() {
 
         const localStatus = getLocalAdminStatus();
         setAdminAuthMode(Boolean(localStatus.configured));
-
-        if (!localStatus.configured) {
-            setAdminSetupMessage('This Netlify deployment stores data in your browser. Create admin credentials to continue.');
-        } else {
-            setAdminLoginMessage('This deployment is using browser storage. Sign in with your saved admin credentials.');
-        }
+        setAdminLoginMessage('Sign in with the approved admin email. Other emails continue with the student portal.');
 
         if (localStatus.logged_in || sessionStorage.getItem(ADMIN_SESSION_KEY) === '1') {
             await openAdminDashboard({

@@ -129,13 +129,13 @@
                 <p class="eyebrow">Admin access</p>
                 <h2>Admin account</h2>
                 <p class="muted">
-                    Sign in with your school admin account. If no account has been created yet, set one up below.
+                    Sign in with the approved admin email. Other emails continue with the student portal.
                 </p>
                 <section id="adminLoginSection">
                     <form id="adminLoginForm" class="auth-form" autocomplete="off">
                         <label class="field">
-                            <span>Username</span>
-                            <input id="adminUsername" name="username" type="text" placeholder="Admin username">
+                            <span>Email</span>
+                            <input id="adminUsername" name="email" type="email" >
                         </label>
 
                         <label class="field">
@@ -185,7 +185,7 @@
             </div>
             <div class="dashboard-actions">
                 <span class="admin-badge" id="adminBadge">Teacher signed in</span>
-                <button class="ghost-button" id="toggleAdminCredentialsBtn" type="button" aria-expanded="false" aria-controls="adminCredentialsPanel">
+                <button class="ghost-button" id="toggleAdminCredentialsBtn" type="button" aria-expanded="false" aria-controls="adminCredentialsPanel" hidden>
                     Change credentials
                 </button>
                 <button class="ghost-button" id="logoutBtn" type="button">Log out</button>

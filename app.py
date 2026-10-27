@@ -5,17 +5,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, session
-from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data" / "students.json"
 EVENT_PHOTOS_FILE = BASE_DIR / "data" / "event_photos.json"
-CREDENTIALS_FILE = BASE_DIR / "data" / "admin_credentials.json"
+SYLLABUS_FILE = BASE_DIR / "data" / "syllabus.json"
 EVENT_PHOTO_UPLOAD_DIR = BASE_DIR / "static" / "uploads" / "event-photos"
 EVENT_PHOTO_WEB_DIR = "uploads/event-photos"
+SYLLABUS_PDF_UPLOAD_DIR = BASE_DIR / "static" / "uploads" / "syllabus-pdfs"
+SYLLABUS_PDF_WEB_DIR = "uploads/syllabus-pdfs"
 SUBJECT_FIELDS = ("maths", "science", "english", "kannada", "social_science", "hindi")
 ALLOWED_EVENT_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+ALLOWED_SYLLABUS_PDF_EXTENSIONS = {".pdf"}
+ADMIN_EMAIL = "akashthonse8@gmail.com"
+ADMIN_PASSWORD = "akash8217"
 
 DEFAULT_STUDENTS = [
     {
@@ -133,6 +137,10 @@ def build_event_photo_url(stored_filename):
     return f"/static/{EVENT_PHOTO_WEB_DIR}/{stored_filename}"
 
 
+def build_syllabus_pdf_url(stored_filename):
+    return f"/static/{SYLLABUS_PDF_WEB_DIR}/{stored_filename}"
+
+
 def clean_text(value):
     if value is None:
         return ""
@@ -203,8 +211,86 @@ def save_event_photos(photos):
         json.dump(photos, handle, indent=2)
 
 
+def syllabus_class_key(class_name):
+    return clean_text(class_name).casefold()
+
+
+def normalize_syllabus_entry(entry):
+    class_name = clean_text(entry.get("class"))
+    if not class_name:
+        return None
+
+    normalized = {"class": class_name}
+    for field in SUBJECT_FIELDS:
+        normalized[field] = clean_text(entry.get(field))
+
+    pdfs = {}
+    raw_pdfs = entry.get("pdfs")
+    if isinstance(raw_pdfs, dict):
+        for field in SUBJECT_FIELDS:
+            raw_pdf = raw_pdfs.get(field)
+            if not isinstance(raw_pdf, dict):
+                continue
+
+            stored_filename = secure_filename(clean_text(raw_pdf.get("stored_filename")))
+            if not stored_filename or Path(stored_filename).suffix.lower() not in ALLOWED_SYLLABUS_PDF_EXTENSIONS:
+                continue
+
+            pdfs[field] = {
+                "original_filename": clean_text(raw_pdf.get("original_filename")) or stored_filename,
+                "stored_filename": stored_filename,
+                "url": build_syllabus_pdf_url(stored_filename),
+            }
+
+    if pdfs:
+        normalized["pdfs"] = pdfs
+    return normalized
+
+
+def load_syllabus():
+    if not SYLLABUS_FILE.exists():
+        return []
+
+    try:
+        with SYLLABUS_FILE.open("r", encoding="utf-8") as handle:
+            syllabus = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        syllabus = []
+        save_syllabus(syllabus)
+        return syllabus
+
+    if not isinstance(syllabus, list):
+        save_syllabus([])
+        return []
+
+    normalized_syllabus = []
+    for entry in syllabus:
+        if not isinstance(entry, dict):
+            continue
+        normalized_entry = normalize_syllabus_entry(entry)
+        if normalized_entry is not None:
+            normalized_syllabus.append(normalized_entry)
+
+    normalized_syllabus.sort(key=lambda item: syllabus_class_key(item.get("class")))
+
+    if normalized_syllabus != syllabus:
+        save_syllabus(normalized_syllabus)
+
+    return normalized_syllabus
+
+
+def save_syllabus(syllabus):
+    SYLLABUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with SYLLABUS_FILE.open("w", encoding="utf-8") as handle:
+        json.dump(syllabus, handle, indent=2)
+
+
 def is_allowed_event_photo(filename):
     return Path(filename).suffix.lower() in ALLOWED_EVENT_PHOTO_EXTENSIONS
+
+
+def is_allowed_syllabus_pdf(filename):
+    return Path(filename).suffix.lower() in ALLOWED_SYLLABUS_PDF_EXTENSIONS
 
 
 def delete_event_photo_file(stored_filename):
@@ -222,6 +308,24 @@ def delete_event_photo_file(stored_filename):
         if target_path == base_path or target_path.is_relative_to(base_path):
             if target_path.exists():
                 target_path.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def delete_syllabus_pdf_file(stored_filename):
+    filename = secure_filename(clean_text(stored_filename))
+    if not filename or not is_allowed_syllabus_pdf(filename):
+        return
+
+    try:
+        base_path = SYLLABUS_PDF_UPLOAD_DIR.resolve(strict=False)
+        target_path = (SYLLABUS_PDF_UPLOAD_DIR / filename).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return
+
+    try:
+        if target_path != base_path and target_path.is_relative_to(base_path) and target_path.exists():
+            target_path.unlink()
     except (OSError, ValueError):
         pass
 
@@ -249,42 +353,15 @@ def remove_event_photo(photo_id):
     return removed_photo, load_event_photos()
 
 
+def normalize_email(value):
+    return str(value or "").strip().lower()
+
+
 def load_admin_credentials():
-    if not CREDENTIALS_FILE.exists():
-        return None
-
-    try:
-        with CREDENTIALS_FILE.open("r", encoding="utf-8") as handle:
-            credentials = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return None
-
-    if not isinstance(credentials, dict):
-        return None
-
-    username = str(credentials.get("username", "")).strip()
-    password_hash = str(credentials.get("password_hash", "")).strip()
-
-    if not username or not password_hash:
-        return None
-
     return {
-        "username": username,
-        "password_hash": password_hash,
+        "username": ADMIN_EMAIL,
+        "password": ADMIN_PASSWORD,
     }
-
-
-def save_admin_credentials(username, password):
-    CREDENTIALS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with CREDENTIALS_FILE.open("w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "username": username,
-                "password_hash": generate_password_hash(password),
-            },
-            handle,
-            indent=2,
-        )
 
 
 def request_payload():
@@ -322,6 +399,20 @@ def parse_student_payload(payload):
     return student, None
 
 
+def parse_syllabus_payload(payload):
+    class_name = clean_text(payload.get("class"))
+
+    if not class_name:
+        return None, "Class is required."
+
+    syllabus_entry = {"class": class_name}
+    for field in SUBJECT_FIELDS:
+        subject_syllabus = clean_text(payload.get(field))
+        if subject_syllabus:
+            syllabus_entry[field] = subject_syllabus
+    return syllabus_entry, None
+
+
 def find_student(students, roll_no):
     for student in students:
         try:
@@ -333,7 +424,12 @@ def find_student(students, roll_no):
 
 
 def admin_is_configured():
-    return load_admin_credentials() is not None
+    return True
+
+
+def clear_admin_session():
+    session.pop("admin_logged_in", None)
+    session.pop("admin_username", None)
 
 
 @app.route("/")
@@ -358,57 +454,41 @@ def get_student(roll_no):
 @app.route("/api/admin/login", methods=["POST"])
 def admin_login():
     payload = request_payload()
-    username = str(payload.get("username", "")).strip()
+    username = str(payload.get("email") or payload.get("username", "")).strip()
+    email = normalize_email(username)
     password = str(payload.get("password", ""))
 
     credentials = load_admin_credentials()
-    if credentials is None:
-        return jsonify({"ok": False, "message": "No admin credentials have been created yet."}), 400
 
-    if username == credentials["username"] and check_password_hash(credentials["password_hash"], password):
+    if email != normalize_email(credentials["username"]):
+        clear_admin_session()
+        return jsonify(
+            {
+                "ok": True,
+                "role": "student",
+                "message": "Student portal opened. Admin access is only for the approved email.",
+            }
+        )
+
+    if password == credentials["password"]:
         session["admin_logged_in"] = True
         session["admin_username"] = credentials["username"]
-        return jsonify({"ok": True, "message": "Admin login successful.", "username": credentials["username"]})
+        return jsonify(
+            {
+                "ok": True,
+                "role": "admin",
+                "message": "Admin login successful.",
+                "username": credentials["username"],
+            }
+        )
 
-    return jsonify({"ok": False, "message": "Invalid admin username or password."}), 401
+    clear_admin_session()
+    return jsonify({"ok": False, "message": "Invalid admin email or password."}), 401
 
 
 @app.route("/api/admin/credentials", methods=["POST"])
 def admin_credentials():
-    payload = request_payload()
-    username = str(payload.get("username", "")).strip()
-    password = str(payload.get("password", ""))
-    confirm_password = str(payload.get("confirm_password", ""))
-
-    if not username or not password or not confirm_password:
-        return jsonify({"ok": False, "message": "Please complete every credential field."}), 400
-
-    if len(username) < 3:
-        return jsonify({"ok": False, "message": "Username must be at least 3 characters long."}), 400
-
-    if len(password) < 6:
-        return jsonify({"ok": False, "message": "Password must be at least 6 characters long."}), 400
-
-    if password != confirm_password:
-        return jsonify({"ok": False, "message": "Passwords do not match."}), 400
-
-    credentials = load_admin_credentials()
-    if credentials is not None and not session.get("admin_logged_in"):
-        return jsonify({"ok": False, "message": "Admin login required to change credentials."}), 403
-
-    save_admin_credentials(username, password)
-    session["admin_logged_in"] = True
-    session["admin_username"] = username
-
-    action = "created" if credentials is None else "updated"
-    return jsonify(
-        {
-            "ok": True,
-            "message": f"Admin credentials {action} successfully.",
-            "logged_in": True,
-            "username": username,
-        }
-    )
+    return jsonify({"ok": False, "message": "Admin credentials are fixed for this portal."}), 403
 
 
 @app.route("/api/admin/logout", methods=["POST"])
@@ -421,6 +501,106 @@ def admin_logout():
 @app.route("/api/event-photos")
 def get_event_photos():
     return jsonify(load_event_photos())
+
+
+@app.route("/api/syllabus")
+def get_syllabus():
+    return jsonify(load_syllabus())
+
+
+@app.route("/api/admin/syllabus", methods=["POST"])
+def save_syllabus_entry():
+    if not session.get("admin_logged_in"):
+        return jsonify({"ok": False, "message": "Admin login required."}), 403
+
+    payload = request_payload()
+    syllabus_entry, error = parse_syllabus_payload(payload)
+    if error:
+        return jsonify({"ok": False, "message": error}), 400
+
+    syllabus = load_syllabus()
+    target_key = syllabus_class_key(syllabus_entry["class"])
+    existing = None
+    for entry in syllabus:
+        if syllabus_class_key(entry.get("class")) == target_key:
+            existing = entry
+            break
+
+    uploaded_pdfs = []
+    for field in SUBJECT_FIELDS:
+        file = request.files.get(f"{field}_pdf")
+        if not file or not file.filename:
+            continue
+
+        original_filename = secure_filename(file.filename)
+        if not original_filename or not is_allowed_syllabus_pdf(original_filename):
+            return jsonify(
+                {
+                    "ok": False,
+                    "message": f"The {field.replace('_', ' ')} attachment must be a PDF file.",
+                }
+            ), 400
+        uploaded_pdfs.append((field, file, original_filename))
+
+    if len(syllabus_entry) == 1 and not uploaded_pdfs:
+        return jsonify(
+            {
+                "ok": False,
+                "message": "Add at least one subject syllabus or PDF attachment before saving.",
+            }
+        ), 400
+
+    new_pdfs = dict(existing.get("pdfs", {})) if existing else {}
+    replaced_pdfs = []
+    saved_filenames = []
+
+    try:
+        if uploaded_pdfs:
+            SYLLABUS_PDF_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+        for field, file, original_filename in uploaded_pdfs:
+            stored_filename = f"{uuid.uuid4().hex}.pdf"
+            file.save(SYLLABUS_PDF_UPLOAD_DIR / stored_filename)
+            saved_filenames.append(stored_filename)
+
+            previous_pdf = new_pdfs.get(field)
+            if isinstance(previous_pdf, dict):
+                replaced_pdfs.append(previous_pdf.get("stored_filename"))
+
+            new_pdfs[field] = {
+                "original_filename": original_filename,
+                "stored_filename": stored_filename,
+                "url": build_syllabus_pdf_url(stored_filename),
+            }
+    except OSError:
+        for stored_filename in saved_filenames:
+            delete_syllabus_pdf_file(stored_filename)
+        return jsonify({"ok": False, "message": "Unable to save the PDF attachment."}), 500
+
+    if new_pdfs:
+        syllabus_entry["pdfs"] = new_pdfs
+
+    if existing is None:
+        syllabus.append(syllabus_entry)
+        action = "added"
+    else:
+        existing.update(syllabus_entry)
+        action = "updated"
+
+    syllabus.sort(key=lambda item: syllabus_class_key(item.get("class")))
+    save_syllabus(syllabus)
+
+    for stored_filename in replaced_pdfs:
+        delete_syllabus_pdf_file(stored_filename)
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": f"Syllabus for class {syllabus_entry['class']} {action} successfully.",
+            "syllabus": syllabus,
+            "entry": syllabus_entry,
+        }
+    )
 
 
 @app.route("/api/admin/event-photos", methods=["POST"])
