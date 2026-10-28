@@ -22,52 +22,6 @@ ALLOWED_SYLLABUS_PDF_EXTENSIONS = {".pdf"}
 ADMIN_EMAIL = "akashthonse8@gmail.com"
 ADMIN_PASSWORD = "akash8217"
 
-DEFAULT_STUDENTS = [
-    {
-        "roll_no": 101,
-        "name": "Akash",
-        "class": "10A",
-        "maths": 90,
-        "science": 85,
-        "english": 88,
-        "kannada": 91,
-        "social_science": 86,
-        "hindi": 89,
-    },
-    {
-        "roll_no": 102,
-        "name": "Rahul",
-        "class": "10A",
-        "maths": 80,
-        "science": 75,
-        "english": 82,
-        "kannada": 78,
-        "social_science": 74,
-        "hindi": 80,
-    },
-    {
-        "roll_no": 103,
-        "name": "Anjali",
-        "class": "10A",
-        "maths": 95,
-        "science": 92,
-        "english": 90,
-        "kannada": 94,
-        "social_science": 96,
-        "hindi": 91,
-    },
-    {
-        "roll_no": 104,
-        "name": "Adithya",
-        "class": "7A",
-        "maths": 78,
-        "science": 67,
-        "english": 99,
-        "kannada": 84,
-        "social_science": 72,
-        "hindi": 76,
-    },
-]
 
 try:
     from flask_cors import CORS
