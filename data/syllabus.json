@@ -1,34 +1,51 @@
 [
   {
     "class": "7",
-    "maths": "",
-    "science": "",
-    "english": "",
-    "kannada": "",
-    "social_science": "",
-    "hindi": "",
-    "pdfs": {
-      "maths": {
-        "original_filename": "Book1.pdf",
-        "stored_filename": "c4533584938a467398bbe476a71095e3.pdf",
-        "url": "/static/uploads/syllabus-pdfs/c4533584938a467398bbe476a71095e3.pdf"
-      }
+    "subjects": {
+      "maths": [
+        {
+          "title": "ch1",
+          "content": "",
+          "pdf": {
+            "original_filename": "Book1.pdf",
+            "stored_filename": "d0c22b791acb4749bf425668c6a1e52a.pdf",
+            "url": "/static/uploads/syllabus-pdfs/d0c22b791acb4749bf425668c6a1e52a.pdf"
+          }
+        },
+        {
+          "title": "ch2",
+          "content": "",
+          "pdf": {
+            "original_filename": "Garodi_Reciept.pdf",
+            "stored_filename": "9205ed3756924b6c97f177c94f00c47b.pdf",
+            "url": "/static/uploads/syllabus-pdfs/9205ed3756924b6c97f177c94f00c47b.pdf"
+          }
+        }
+      ],
+      "science": [
+        {
+          "title": "ch1",
+          "content": "",
+          "pdf": {
+            "original_filename": "Pending_List.pdf",
+            "stored_filename": "c8c3b6fa642647419b2b93a8f95175f4.pdf",
+            "url": "/static/uploads/syllabus-pdfs/c8c3b6fa642647419b2b93a8f95175f4.pdf"
+          }
+        },
+        {
+          "title": "ch2",
+          "content": "",
+          "pdf": {
+            "original_filename": "Pending_List.pdf",
+            "stored_filename": "98821e3782994ee3a01924e22d6fd14e.pdf",
+            "url": "/static/uploads/syllabus-pdfs/98821e3782994ee3a01924e22d6fd14e.pdf"
+          }
+        }
+      ]
     }
   },
   {
     "class": "8",
-    "maths": "",
-    "science": "",
-    "english": "",
-    "kannada": "",
-    "social_science": "",
-    "hindi": "",
-    "pdfs": {
-      "maths": {
-        "original_filename": "Garodi_Reciept.pdf",
-        "stored_filename": "cc6607cf3e34492d97245170d1df98e0.pdf",
-        "url": "/static/uploads/syllabus-pdfs/cc6607cf3e34492d97245170d1df98e0.pdf"
-      }
-    }
+    "subjects": {}
   }
 ]

@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import db
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.utils import secure_filename
 
@@ -68,8 +69,17 @@ DEFAULT_STUDENTS = [
     },
 ]
 
+try:
+    from flask_cors import CORS
+    _HAS_CORS = True
+except ImportError:
+    _HAS_CORS = False
+
 app = Flask(__name__, template_folder="static/template", static_folder="static")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-school-portal-secret")
+
+if _HAS_CORS:
+    CORS(app, supports_credentials=True, origins=os.environ.get("ALLOWED_ORIGINS", "*").split(","))
 
 
 def default_students():
@@ -92,45 +102,98 @@ def normalize_student(student):
     return normalized
 
 
-def load_students():
-    if not DATA_FILE.exists():
-        save_students(default_students())
+def get_meta_value(key):
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM meta WHERE key = ?", (key,))
+    row = cur.fetchone()
+    conn.close()
+    return row["value"] if row is not None else None
 
-    try:
-        with DATA_FILE.open("r", encoding="utf-8") as handle:
-            students = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        students = default_students()
-        save_students(students)
-        return students
 
-    if not isinstance(students, list):
-        students = default_students()
-        save_students(students)
-        return students
-
-    normalized_students = []
-    for student in students:
-        if not isinstance(student, dict):
-            continue
-        try:
-            normalized_students.append(normalize_student(student))
-        except (KeyError, TypeError, ValueError):
-            continue
-
-    normalized_students = sorted(
-        normalized_students,
-        key=lambda student: student["roll_no"],
+def set_meta_value(key, value):
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, str(value)),
     )
-    if normalized_students != students:
-        save_students(normalized_students)
-    return normalized_students
+    conn.commit()
+    conn.close()
+
+
+def load_students():
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT roll_no,name,class,maths,science,english,kannada,social_science,hindi FROM students ORDER BY roll_no")
+    rows = cur.fetchall()
+    conn.close()
+    if not rows:
+        seeded = get_meta_value("students_seeded") == "1"
+        if seeded:
+            return []
+
+        # migrate from legacy JSON if present
+        legacy = []
+        if DATA_FILE.exists():
+            try:
+                legacy = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+                if not isinstance(legacy, list):
+                    legacy = []
+            except (OSError, json.JSONDecodeError):
+                legacy = []
+        if legacy:
+            save_students(legacy)
+            set_meta_value("students_seeded", "1")
+            return load_students()
+
+        set_meta_value("students_seeded", "1")
+        return []
+
+    if get_meta_value("students_seeded") != "1":
+        set_meta_value("students_seeded", "1")
+    students = []
+    for row in rows:
+        students.append(
+            {
+                "roll_no": int(row["roll_no"]),
+                "name": row["name"],
+                "class": row["class"],
+                "maths": int(row["maths"]),
+                "science": int(row["science"]),
+                "english": int(row["english"]),
+                "kannada": int(row["kannada"]),
+                "social_science": int(row["social_science"]),
+                "hindi": int(row["hindi"]),
+            }
+        )
+    return students
 
 
 def save_students(students):
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with DATA_FILE.open("w", encoding="utf-8") as handle:
-        json.dump(students, handle, indent=2)
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM students")
+    normalized_students = []
+    for student in students:
+        normalized = normalize_student(student)
+        normalized_students.append(normalized)
+        cur.execute(
+            "INSERT INTO students (roll_no,name,class,maths,science,english,kannada,social_science,hindi) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                int(normalized["roll_no"]), normalized["name"], normalized["class"],
+                int(normalized["maths"]), int(normalized["science"]), int(normalized["english"]),
+                int(normalized["kannada"]), int(normalized["social_science"]), int(normalized["hindi"]),
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+    # keep legacy JSON in sync so deleted records never reappear on migration
+    try:
+        DATA_FILE.write_text(json.dumps(normalized_students, indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def build_event_photo_url(stored_filename):
@@ -174,21 +237,25 @@ def normalize_event_photo(photo):
 
 
 def load_event_photos():
-    if not EVENT_PHOTOS_FILE.exists():
-        return []
-
-    try:
-        with EVENT_PHOTOS_FILE.open("r", encoding="utf-8") as handle:
-            photos = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        photos = []
-        save_event_photos(photos)
-        return photos
-
-    if not isinstance(photos, list):
-        save_event_photos([])
-        return []
-
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT data FROM event_photos")
+    rows = cur.fetchall()
+    conn.close()
+    photos = []
+    for row in rows:
+        try:
+            photos.append(json.loads(row["data"]))
+        except (TypeError, json.JSONDecodeError):
+            continue
+    if not photos and EVENT_PHOTOS_FILE.exists():
+        try:
+            legacy = json.loads(EVENT_PHOTOS_FILE.read_text(encoding="utf-8"))
+            if isinstance(legacy, list) and legacy:
+                save_event_photos(legacy)
+                return load_event_photos()
+        except (OSError, json.JSONDecodeError):
+            pass
     normalized_photos = []
     for photo in photos:
         if not isinstance(photo, dict):
@@ -196,23 +263,55 @@ def load_event_photos():
         normalized_photo = normalize_event_photo(photo)
         if normalized_photo is not None:
             normalized_photos.append(normalized_photo)
-
     normalized_photos.sort(key=lambda item: item.get("uploaded_at", ""), reverse=True)
-
     if normalized_photos != photos:
         save_event_photos(normalized_photos)
-
     return normalized_photos
 
 
 def save_event_photos(photos):
-    EVENT_PHOTOS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with EVENT_PHOTOS_FILE.open("w", encoding="utf-8") as handle:
-        json.dump(photos, handle, indent=2)
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM event_photos")
+    normalized_photos = []
+    for photo in photos:
+        normalized = normalize_event_photo(photo)
+        if normalized is None:
+            continue
+        normalized_photos.append(normalized)
+        cur.execute("INSERT INTO event_photos (id,data) VALUES (?,?)", (normalized["id"], json.dumps(normalized)))
+    conn.commit()
+    conn.close()
+
+    try:
+        EVENT_PHOTOS_FILE.write_text(json.dumps(normalized_photos, indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def syllabus_class_key(class_name):
     return clean_text(class_name).casefold()
+
+
+def normalize_syllabus_chapter(raw_chapter, fallback_pdf=None):
+    if not isinstance(raw_chapter, dict):
+        raw_chapter = {"content": raw_chapter}
+    title = clean_text(raw_chapter.get("title"))
+    content = clean_text(raw_chapter.get("content") or raw_chapter.get("text"))
+    pdf = None
+    raw_pdf = raw_chapter.get("pdf")
+    if not isinstance(raw_pdf, dict):
+        raw_pdf = fallback_pdf
+    if isinstance(raw_pdf, dict):
+        stored_filename = secure_filename(clean_text(raw_pdf.get("stored_filename")))
+        if stored_filename and Path(stored_filename).suffix.lower() in ALLOWED_SYLLABUS_PDF_EXTENSIONS:
+            pdf = {
+                "original_filename": clean_text(raw_pdf.get("original_filename")) or stored_filename,
+                "stored_filename": stored_filename,
+                "url": build_syllabus_pdf_url(stored_filename),
+            }
+    return {"title": title, "content": content, "pdf": pdf}
+
 
 
 def normalize_syllabus_entry(entry):
@@ -220,49 +319,69 @@ def normalize_syllabus_entry(entry):
     if not class_name:
         return None
 
-    normalized = {"class": class_name}
-    for field in SUBJECT_FIELDS:
-        normalized[field] = clean_text(entry.get(field))
+    normalized = {"class": class_name, "subjects": {}}
 
-    pdfs = {}
-    raw_pdfs = entry.get("pdfs")
-    if isinstance(raw_pdfs, dict):
+    raw_subjects = entry.get("subjects")
+    if isinstance(raw_subjects, dict):
         for field in SUBJECT_FIELDS:
-            raw_pdf = raw_pdfs.get(field)
-            if not isinstance(raw_pdf, dict):
-                continue
+            raw_chapters = raw_subjects.get(field)
+            chapters = []
+            if isinstance(raw_chapters, list):
+                for rc in raw_chapters:
+                    ch = normalize_syllabus_chapter(rc)
+                    if ch["title"] or ch["content"] or ch["pdf"]:
+                        chapters.append(ch)
+            elif raw_chapters is not None:
+                ch = normalize_syllabus_chapter(raw_chapters)
+                if ch["title"] or ch["content"] or ch["pdf"]:
+                    chapters.append(ch)
+            if chapters:
+                normalized["subjects"][field] = chapters
 
-            stored_filename = secure_filename(clean_text(raw_pdf.get("stored_filename")))
-            if not stored_filename or Path(stored_filename).suffix.lower() not in ALLOWED_SYLLABUS_PDF_EXTENSIONS:
-                continue
+    raw_pdfs = entry.get("pdfs") if isinstance(entry.get("pdfs"), dict) else {}
+    for field in SUBJECT_FIELDS:
+        if field in normalized["subjects"]:
+            continue
+        value = entry.get(field)
+        pdf = raw_pdfs.get(field) if isinstance(raw_pdfs.get(field), dict) else None
+        chapters = []
+        if isinstance(value, list):
+            for v in value:
+                ch = normalize_syllabus_chapter({"content": v}, pdf)
+                if ch["title"] or ch["content"] or ch["pdf"]:
+                    chapters.append(ch)
+        else:
+            text = clean_text(value)
+            if text or pdf:
+                chapters.append(normalize_syllabus_chapter({"content": text}, pdf))
+        if chapters and pdf and not any(c.get("pdf") for c in chapters):
+            chapters[0]["pdf"] = normalize_syllabus_chapter({}, pdf)["pdf"]
+        if chapters and (chapters[0]["content"] or chapters[0]["pdf"]):
+            normalized["subjects"][field] = chapters
 
-            pdfs[field] = {
-                "original_filename": clean_text(raw_pdf.get("original_filename")) or stored_filename,
-                "stored_filename": stored_filename,
-                "url": build_syllabus_pdf_url(stored_filename),
-            }
-
-    if pdfs:
-        normalized["pdfs"] = pdfs
     return normalized
 
 
 def load_syllabus():
-    if not SYLLABUS_FILE.exists():
-        return []
-
-    try:
-        with SYLLABUS_FILE.open("r", encoding="utf-8") as handle:
-            syllabus = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        syllabus = []
-        save_syllabus(syllabus)
-        return syllabus
-
-    if not isinstance(syllabus, list):
-        save_syllabus([])
-        return []
-
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT data FROM syllabus")
+    rows = cur.fetchall()
+    conn.close()
+    syllabus = []
+    for row in rows:
+        try:
+            syllabus.append(json.loads(row["data"]))
+        except (TypeError, json.JSONDecodeError):
+            continue
+    if not syllabus and SYLLABUS_FILE.exists():
+        try:
+            legacy = json.loads(SYLLABUS_FILE.read_text(encoding="utf-8"))
+            if isinstance(legacy, list) and legacy:
+                save_syllabus(legacy)
+                return load_syllabus()
+        except (OSError, json.JSONDecodeError):
+            pass
     normalized_syllabus = []
     for entry in syllabus:
         if not isinstance(entry, dict):
@@ -270,19 +389,25 @@ def load_syllabus():
         normalized_entry = normalize_syllabus_entry(entry)
         if normalized_entry is not None:
             normalized_syllabus.append(normalized_entry)
-
     normalized_syllabus.sort(key=lambda item: syllabus_class_key(item.get("class")))
-
     if normalized_syllabus != syllabus:
         save_syllabus(normalized_syllabus)
-
     return normalized_syllabus
 
 
 def save_syllabus(syllabus):
-    SYLLABUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with SYLLABUS_FILE.open("w", encoding="utf-8") as handle:
-        json.dump(syllabus, handle, indent=2)
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM syllabus")
+    for entry in syllabus:
+        cur.execute("INSERT INTO syllabus (class,data) VALUES (?,?)", (clean_text(entry.get("class")), json.dumps(entry)))
+    conn.commit()
+    conn.close()
+
+    try:
+        SYLLABUS_FILE.write_text(json.dumps(syllabus, indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def is_allowed_event_photo(filename):
@@ -294,8 +419,8 @@ def is_allowed_syllabus_pdf(filename):
 
 
 def delete_event_photo_file(stored_filename):
-    filename = clean_text(stored_filename)
-    if not filename:
+    filename = secure_filename(clean_text(stored_filename))
+    if not filename or not is_allowed_event_photo(filename):
         return
 
     try:
@@ -305,9 +430,8 @@ def delete_event_photo_file(stored_filename):
         return
 
     try:
-        if target_path == base_path or target_path.is_relative_to(base_path):
-            if target_path.exists():
-                target_path.unlink()
+        if target_path != base_path and target_path.is_relative_to(base_path) and target_path.exists():
+            target_path.unlink()
     except (OSError, ValueError):
         pass
 
@@ -330,6 +454,103 @@ def delete_syllabus_pdf_file(stored_filename):
         pass
 
 
+def remove_syllabus_entry(class_name):
+    target_class = clean_text(class_name)
+    if not target_class:
+        return None, load_syllabus()
+
+    entries = load_syllabus()
+    removed_entry = None
+    remaining_entries = []
+
+    for entry in entries:
+        if removed_entry is None and syllabus_class_key(entry.get("class")) == syllabus_class_key(target_class):
+            removed_entry = entry
+            continue
+        remaining_entries.append(entry)
+
+    if removed_entry is None:
+        return None, entries
+
+    for subject, chapters in (removed_entry.get("subjects") or {}).items():
+        if not isinstance(chapters, list):
+            continue
+        for chapter in chapters:
+            if isinstance(chapter, dict) and isinstance(chapter.get("pdf"), dict):
+                delete_syllabus_pdf_file(chapter["pdf"].get("stored_filename"))
+
+    save_syllabus(remaining_entries)
+    return removed_entry, load_syllabus()
+
+
+@app.route("/api/admin/syllabus/chapter", methods=["DELETE"])
+def delete_syllabus_chapter():
+    if not session.get("admin_logged_in"):
+        return jsonify({"ok": False, "message": "Admin login required."}), 403
+
+    payload = request_payload()
+    class_name = clean_text(payload.get("class"))
+    subject = clean_text(payload.get("subject"))
+    try:
+        index = int(payload.get("index"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Chapter index is required."}), 400
+
+    if not class_name or subject not in SUBJECT_FIELDS:
+        return jsonify({"ok": False, "message": "Class and valid subject are required."}), 400
+
+    syllabus = load_syllabus()
+    target_key = syllabus_class_key(class_name)
+    entry = None
+    for item in syllabus:
+        if syllabus_class_key(item.get("class")) == target_key:
+            entry = item
+            break
+
+    if entry is None:
+        return jsonify({"ok": False, "message": "Syllabus entry not found."}), 404
+
+    subjects = entry.get("subjects") or {}
+    chapters = subjects.get(subject)
+    if not isinstance(chapters, list) or index < 0 or index >= len(chapters):
+        return jsonify({"ok": False, "message": "Chapter not found."}), 404
+
+    removed_chapter = chapters.pop(index)
+    if isinstance(removed_chapter, dict) and isinstance(removed_chapter.get("pdf"), dict):
+        delete_syllabus_pdf_file(removed_chapter["pdf"].get("stored_filename"))
+
+    if chapters:
+        subjects[subject] = chapters
+    else:
+        subjects.pop(subject, None)
+
+    entry["subjects"] = subjects
+    save_syllabus(syllabus)
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Chapter deleted successfully.",
+            "syllabus": load_syllabus(),
+        }
+    )
+@app.route("/api/admin/syllabus/<path:class_name>", methods=["DELETE"])
+
+def delete_syllabus_entry(class_name):
+    if not session.get("admin_logged_in"):
+        return jsonify({"ok": False, "message": "Admin login required."}), 403
+
+    removed_entry, remaining_entries = remove_syllabus_entry(class_name)
+    if removed_entry is None:
+        return jsonify({"ok": False, "message": "Syllabus entry not found."}), 404
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": f"Syllabus for class {removed_entry.get('class')} deleted successfully.",
+            "syllabus": remaining_entries,
+        }
+    )
 def remove_event_photo(photo_id):
     target_photo_id = clean_text(photo_id)
     if not target_photo_id:
@@ -355,13 +576,63 @@ def remove_event_photo(photo_id):
 
 def normalize_email(value):
     return str(value or "").strip().lower()
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM meta WHERE key = ?", (key,))
+    row = cur.fetchone()
+    conn.close()
+    return row["value"] if row is not None else None
+
+
+def set_meta_value(key, value):
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, str(value)),
+    )
+    conn.commit()
+    conn.close()
+    return str(value or "").strip().lower()
 
 
 def load_admin_credentials():
-    return {
-        "username": ADMIN_EMAIL,
-        "password": ADMIN_PASSWORD,
-    }
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT username, password_hash FROM admin_credentials WHERE id = 1")
+    row = cur.fetchone()
+    conn.close()
+    if row is None:
+        # seed default
+        from werkzeug.security import generate_password_hash
+        save_admin_credentials({"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        return {"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD, "password_hash": generate_password_hash(ADMIN_PASSWORD)}
+    # support both hashed and plaintext
+    result = {"username": row["username"]}
+    if "password_hash" in row.keys() and row["password_hash"]:
+        result["password_hash"] = row["password_hash"]
+    else:
+        result["password"] = row.get("password", ADMIN_PASSWORD) if hasattr(row, "get") else ADMIN_PASSWORD
+    return result
+
+
+def save_admin_credentials(credentials):
+    from werkzeug.security import generate_password_hash
+    username = credentials.get("username", ADMIN_EMAIL)
+    password = credentials.get("password")
+    password_hash = credentials.get("password_hash")
+    if password_hash is None and password is not None:
+        password_hash = generate_password_hash(password)
+    if password_hash is None:
+        password_hash = generate_password_hash(ADMIN_PASSWORD)
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO admin_credentials (id,username,password_hash) VALUES (1,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username, password_hash=excluded.password_hash",
+        (username, password_hash),
+    )
+    conn.commit()
+    conn.close()
 
 
 def request_payload():
@@ -405,11 +676,33 @@ def parse_syllabus_payload(payload):
     if not class_name:
         return None, "Class is required."
 
-    syllabus_entry = {"class": class_name}
+    syllabus_entry = {"class": class_name, "subjects": {}}
+
     for field in SUBJECT_FIELDS:
-        subject_syllabus = clean_text(payload.get(field))
-        if subject_syllabus:
-            syllabus_entry[field] = subject_syllabus
+        chapters = []
+        index = 0
+        while True:
+            title_key = f"{field}_chapter_{index}_title"
+            content_key = f"{field}_chapter_{index}_content"
+            title = clean_text(payload.get(title_key))
+            content = clean_text(payload.get(content_key))
+            if title_key not in payload and content_key not in payload:
+                # also check for any higher index? stop at first gap
+                if index > 0 and (f"{field}_chapter_{index + 1}_title" in payload or f"{field}_chapter_{index + 1}_content" in payload):
+                    index += 1
+                    continue
+                break
+            if title or content:
+                chapters.append({"title": title, "content": content})
+            index += 1
+            if index > 50:
+                break
+
+        if chapters:
+            syllabus_entry["subjects"][field] = chapters
+
+    if not syllabus_entry["subjects"]:
+        return syllabus_entry, None
     return syllabus_entry, None
 
 
@@ -424,7 +717,12 @@ def find_student(students, roll_no):
 
 
 def admin_is_configured():
-    return True
+    conn = db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS c FROM admin_credentials")
+    count = cur.fetchone()["c"]
+    conn.close()
+    return count > 0
 
 
 def clear_admin_session():
@@ -470,7 +768,15 @@ def admin_login():
             }
         )
 
-    if password == credentials["password"]:
+    password_ok = False
+    if "password_hash" in credentials:
+        from werkzeug.security import check_password_hash
+
+        password_ok = check_password_hash(credentials["password_hash"], password)
+    else:
+        password_ok = password == credentials.get("password")
+
+    if password_ok:
         session["admin_logged_in"] = True
         session["admin_username"] = credentials["username"]
         return jsonify(
@@ -488,7 +794,32 @@ def admin_login():
 
 @app.route("/api/admin/credentials", methods=["POST"])
 def admin_credentials():
-    return jsonify({"ok": False, "message": "Admin credentials are fixed for this portal."}), 403
+    payload = request_payload()
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    confirm_password = str(payload.get("confirm_password", ""))
+
+    if not username or not password:
+        return jsonify({"ok": False, "message": "Username and password are required."}), 400
+
+    if password != confirm_password and confirm_password:
+        return jsonify({"ok": False, "message": "Passwords do not match."}), 400
+
+    is_logged_in = bool(session.get("admin_logged_in"))
+    if not is_logged_in and admin_is_configured():
+        return jsonify({"ok": False, "message": "Admin login required."}), 403
+
+    save_admin_credentials({"username": username, "password": password})
+
+    session["admin_logged_in"] = True
+    session["admin_username"] = username
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Admin credentials saved successfully.",
+            "username": username,
+        }
+    )
 
 
 @app.route("/api/admin/logout", methods=["POST"])
@@ -528,21 +859,22 @@ def save_syllabus_entry():
 
     uploaded_pdfs = []
     for field in SUBJECT_FIELDS:
-        file = request.files.get(f"{field}_pdf")
-        if not file or not file.filename:
-            continue
+        chapters = syllabus_entry["subjects"].get(field, [])
+        for index in range(len(chapters)):
+            file = request.files.get(f"{field}_chapter_{index}_pdf")
+            if not file or not file.filename:
+                continue
+            original_filename = secure_filename(file.filename)
+            if not original_filename or not is_allowed_syllabus_pdf(original_filename):
+                return jsonify(
+                    {
+                        "ok": False,
+                        "message": f"The {field.replace('_', ' ')} attachment must be a PDF file.",
+                    }
+                ), 400
+            uploaded_pdfs.append((field, index, file, original_filename))
 
-        original_filename = secure_filename(file.filename)
-        if not original_filename or not is_allowed_syllabus_pdf(original_filename):
-            return jsonify(
-                {
-                    "ok": False,
-                    "message": f"The {field.replace('_', ' ')} attachment must be a PDF file.",
-                }
-            ), 400
-        uploaded_pdfs.append((field, file, original_filename))
-
-    if len(syllabus_entry) == 1 and not uploaded_pdfs:
+    if not syllabus_entry["subjects"] and not uploaded_pdfs:
         return jsonify(
             {
                 "ok": False,
@@ -550,41 +882,51 @@ def save_syllabus_entry():
             }
         ), 400
 
-    new_pdfs = dict(existing.get("pdfs", {})) if existing else {}
-    replaced_pdfs = []
+    existing_subjects = existing.get("subjects", {}) if existing else {}
+    new_subjects = {k: [dict(c) for c in v] for k, v in syllabus_entry["subjects"].items()}
+
     saved_filenames = []
+    replaced_pdfs = []
 
     try:
         if uploaded_pdfs:
             SYLLABUS_PDF_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-        for field, file, original_filename in uploaded_pdfs:
+        for field, index, file, original_filename in uploaded_pdfs:
+            chapters = new_subjects.setdefault(field, [])
+            while len(chapters) <= index:
+                chapters.append({"title": "", "content": ""})
             stored_filename = f"{uuid.uuid4().hex}.pdf"
             file.save(SYLLABUS_PDF_UPLOAD_DIR / stored_filename)
             saved_filenames.append(stored_filename)
 
-            previous_pdf = new_pdfs.get(field)
-            if isinstance(previous_pdf, dict):
-                replaced_pdfs.append(previous_pdf.get("stored_filename"))
+            previous_pdf = None
+            # (append-only: new chapters never replace existing pdfs)
 
-            new_pdfs[field] = {
+            chapters[index]["pdf"] = {
                 "original_filename": original_filename,
                 "stored_filename": stored_filename,
                 "url": build_syllabus_pdf_url(stored_filename),
             }
+
+        syllabus_entry["subjects"] = new_subjects
+
     except OSError:
         for stored_filename in saved_filenames:
             delete_syllabus_pdf_file(stored_filename)
         return jsonify({"ok": False, "message": "Unable to save the PDF attachment."}), 500
 
-    if new_pdfs:
-        syllabus_entry["pdfs"] = new_pdfs
-
     if existing is None:
         syllabus.append(syllabus_entry)
         action = "added"
     else:
-        existing.update(syllabus_entry)
+        # merge new chapters into existing subjects (append, one at a time)
+        merged_subjects = dict(existing.get("subjects") or {})
+        for field, chapters in (syllabus_entry.get("subjects") or {}).items():
+            merged_subjects.setdefault(field, []).extend(chapters)
+        existing["subjects"] = merged_subjects
+        existing["class"] = syllabus_entry["class"]
+        syllabus_entry["subjects"] = merged_subjects
         action = "updated"
 
     syllabus.sort(key=lambda item: syllabus_class_key(item.get("class")))
@@ -597,7 +939,7 @@ def save_syllabus_entry():
         {
             "ok": True,
             "message": f"Syllabus for class {syllabus_entry['class']} {action} successfully.",
-            "syllabus": syllabus,
+            "syllabus": load_syllabus(),
             "entry": syllabus_entry,
         }
     )
@@ -757,6 +1099,11 @@ def admin_status():
         }
     )
 
+
+db.init_db()
+
+if not admin_is_configured():
+    save_admin_credentials({"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
 
 if __name__ == "__main__":
     app.run(debug=True)

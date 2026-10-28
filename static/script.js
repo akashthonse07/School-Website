@@ -1,4 +1,5 @@
 const ADMIN_SESSION_KEY = 'schoolAdminAccess';
+const API_BASE_URL = (window.SCHOOL_API_BASE_URL || '').replace(/\/+$/, '');
 const ADMIN_EMAIL = 'akashthonse8@gmail.com';
 const ADMIN_PASSWORD = 'akash8217';
 
@@ -120,6 +121,7 @@ const LOCAL_STORAGE_KEYS = {
     students: 'schoolPortalLocalStudents',
     eventPhotos: 'schoolPortalLocalEventPhotos',
     syllabus: 'schoolPortalLocalSyllabus',
+    adminCredentials: 'schoolPortalLocalAdminCredentials',
 };
 const LOCAL_SEED_STUDENTS = [
     {
@@ -266,34 +268,57 @@ function normalizeLocalSyllabusEntry(entry) {
         return null;
     }
 
-    const normalized = {
-        class: className,
-    };
-    syllabusFields.forEach((field) => {
-        normalized[field.key] = String(entry?.[field.key] || '').trim();
-    });
+    const subjects = {};
+    const rawSubjects = entry?.subjects;
 
-    const pdfs = {};
-    const rawPdfs = entry?.pdfs;
-    if (rawPdfs && typeof rawPdfs === 'object') {
-        syllabusFields.forEach((field) => {
-            const rawPdf = rawPdfs[field.key];
-            const url = String(rawPdf?.url || '').trim();
-            if (!url) {
-                return;
+    if (rawSubjects && typeof rawSubjects === 'object') {
+        for (const field of syllabusSubjectLabels) {
+            const rawChapters = rawSubjects[field.key];
+            const chapters = [];
+            if (Array.isArray(rawChapters)) {
+                for (const rc of rawChapters) {
+                    const ch = {
+                        title: String(rc?.title || '').trim(),
+                        content: String(rc?.content || rc?.text || '').trim(),
+                        pdf: null,
+                    };
+                    const rawPdf = rc?.pdf;
+                    const url = String(rawPdf?.url || '').trim();
+                    if (url) {
+                        ch.pdf = {
+                            original_filename: String(rawPdf.original_filename || `${field.label} syllabus.pdf`).trim(),
+                            url,
+                        };
+                    }
+                    if (ch.title || ch.content || ch.pdf) chapters.push(ch);
+                }
             }
+            if (chapters.length) subjects[field.key] = chapters;
+        }
+    }
 
-            pdfs[field.key] = {
+    const rawPdfs = entry?.pdfs;
+    for (const field of syllabusSubjectLabels) {
+        if (subjects[field.key]) continue;
+        const text = String(entry?.[field.key] || '').trim();
+        let pdf = null;
+        const rawPdf = rawPdfs?.[field.key];
+        const url = String(rawPdf?.url || '').trim();
+        if (url) {
+            pdf = {
                 original_filename: String(rawPdf.original_filename || `${field.label} syllabus.pdf`).trim(),
                 url,
             };
-        });
+        }
+        if (text || pdf) {
+            subjects[field.key] = [{ title: '', content: text, pdf }];
+        }
     }
 
-    if (Object.keys(pdfs).length) {
-        normalized.pdfs = pdfs;
-    }
-    return normalized;
+    return {
+        class: className,
+        subjects,
+    };
 }
 
 function sortLocalSyllabus(syllabus) {
@@ -323,10 +348,21 @@ function normalizeEmail(value) {
 }
 
 function getLocalAdminCredentials() {
+    const stored = readLocalJson(LOCAL_STORAGE_KEYS.adminCredentials);
+    if (stored && stored.username && stored.password) {
+        return {
+            configured: true,
+            username: String(stored.username).trim(),
+            password: String(stored.password),
+        };
+    }
+
+    const defaults = { username: ADMIN_EMAIL, password: ADMIN_PASSWORD };
+    writeLocalJson(LOCAL_STORAGE_KEYS.adminCredentials, defaults);
     return {
         configured: true,
-        username: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD,
+        username: defaults.username,
+        password: defaults.password,
     };
 }
 
@@ -429,7 +465,33 @@ async function handleLocalApiRequest(input, init = {}) {
     }
 
     if (pathname === '/api/admin/credentials' && method === 'POST') {
-        return jsonResponse({ ok: false, message: 'Admin credentials are fixed for this portal.' }, 403);
+        const payload = await parseLocalPayload(request);
+        const username = String(payload.username || '').trim();
+        const password = String(payload.password || '');
+        const confirmPassword = String(payload.confirm_password || '');
+
+        if (!username || !password) {
+            return jsonResponse({ ok: false, message: 'Username and password are required.' }, 400);
+        }
+
+        if (confirmPassword && password !== confirmPassword) {
+            return jsonResponse({ ok: false, message: 'Passwords do not match.' }, 400);
+        }
+
+        const isLoggedIn = sessionStorage.getItem(ADMIN_SESSION_KEY) === '1';
+        if (!isLoggedIn) {
+            return jsonResponse({ ok: false, message: 'Admin login required.' }, 403);
+        }
+
+        writeLocalJson(LOCAL_STORAGE_KEYS.adminCredentials, { username, password });
+        sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
+        currentAdminUsername = username;
+
+        return jsonResponse({
+            ok: true,
+            message: 'Admin credentials saved successfully.',
+            username,
+        });
     }
 
     if (pathname === '/api/admin/logout' && method === 'POST') {
@@ -454,13 +516,49 @@ async function handleLocalApiRequest(input, init = {}) {
         const payload = await parseLocalPayload(request);
         const syllabusEntry = {
             class: String(readLocalPayloadValue(payload, 'class') || '').trim(),
+            subjects: {},
         };
-        syllabusFields.forEach((field) => {
-            const subjectSyllabus = String(readLocalPayloadValue(payload, field.key) || '').trim();
-            if (subjectSyllabus) {
-                syllabusEntry[field.key] = subjectSyllabus;
+
+        let hasNewAttachment = false;
+
+        for (const field of syllabusSubjectLabels) {
+            const chapters = [];
+            let index = 0;
+            while (true) {
+                const titleKey = `${field.key}_chapter_${index}_title`;
+                const contentKey = `${field.key}_chapter_${index}_content`;
+                if (!(titleKey in payload) && !(contentKey in payload) && !(payload[titleKey]) && !(payload[contentKey])) {
+                    // check if any higher index exists
+                    const nextTitle = `${field.key}_chapter_${index + 1}_title`;
+                    const nextContent = `${field.key}_chapter_${index + 1}_content`;
+                    if (index > 0 && ((nextTitle in payload) || (nextContent in payload))) {
+                        index += 1;
+                        continue;
+                    }
+                    break;
+                }
+                const title = String(readLocalPayloadValue(payload, titleKey) || '').trim();
+                const content = String(readLocalPayloadValue(payload, contentKey) || '').trim();
+                const attachment = readLocalPayloadValue(payload, `${field.key}_chapter_${index}_pdf`);
+                let pdf = null;
+                if (attachment instanceof File && attachment.size > 0) {
+                    if (!isPdfAttachment(attachment)) {
+                        return jsonResponse({ ok: false, message: `The ${field.label} attachment must be a PDF file.` }, 400);
+                    }
+                    pdf = {
+                        original_filename: attachment.name || `${field.label} syllabus.pdf`,
+                        url: await readFileAsDataUrl(attachment),
+                    };
+                    hasNewAttachment = true;
+                }
+                if (title || content || pdf) {
+                    chapters.push({ title, content, pdf });
+                }
+                index += 1;
+                if (index > 50) break;
             }
-        });
+            if (chapters.length) syllabusEntry.subjects[field.key] = chapters;
+        }
 
         if (!syllabusEntry.class) {
             return jsonResponse({ ok: false, message: 'Class is required.' }, 400);
@@ -468,32 +566,25 @@ async function handleLocalApiRequest(input, init = {}) {
 
         const syllabus = getLocalSyllabus();
         const existingIndex = syllabus.findIndex((entry) => syllabusClassKey(entry.class) === syllabusClassKey(syllabusEntry.class));
-        const existingPdfs = existingIndex === -1 ? {} : { ...(syllabus[existingIndex].pdfs || {}) };
-        let hasNewAttachment = false;
+        const existingSubjects = existingIndex === -1 ? {} : { ...(syllabus[existingIndex].subjects || {}) };
 
-        for (const field of syllabusFields) {
-            const attachment = readLocalPayloadValue(payload, `${field.key}_pdf`);
-            if (!(attachment instanceof File) || attachment.size <= 0) {
-                continue;
-            }
-
-            if (!isPdfAttachment(attachment)) {
-                return jsonResponse({ ok: false, message: `The ${field.label} attachment must be a PDF file.` }, 400);
-            }
-
-            existingPdfs[field.key] = {
-                original_filename: attachment.name || `${field.label} syllabus.pdf`,
-                url: await readFileAsDataUrl(attachment),
-            };
-            hasNewAttachment = true;
-        }
-
-        if (Object.keys(syllabusEntry).length === 1 && !hasNewAttachment) {
+        if (!Object.keys(syllabusEntry.subjects).length && !hasNewAttachment) {
             return jsonResponse({ ok: false, message: 'Add at least one subject syllabus or PDF attachment before saving.' }, 400);
         }
 
-        if (Object.keys(existingPdfs).length) {
-            syllabusEntry.pdfs = existingPdfs;
+        for (const field of syllabusSubjectLabels) {
+            const chapters = syllabusEntry.subjects[field.key];
+            if (!Array.isArray(chapters)) continue;
+            const existingChapters = Array.isArray(existingSubjects[field.key]) ? existingSubjects[field.key] : [];
+            chapters.forEach((chapter, index) => {
+                if (chapter.pdf) return;
+                const prev = existingChapters[index];
+                if (prev && prev.pdf) {
+                    chapter.pdf = prev.pdf;
+                }
+            });
+            syllabusEntry.subjects[field.key] = chapters.filter((c) => c.title || c.content || c.pdf);
+            if (!syllabusEntry.subjects[field.key].length) delete syllabusEntry.subjects[field.key];
         }
 
         if (existingIndex === -1) {
@@ -660,6 +751,10 @@ window.fetch = async function fetchWithLocalFallback(input, init) {
 
     if (backendMode === LOCAL_MODE && isApiRequest) {
         return handleLocalApiRequest(input, init);
+    }
+
+    if (API_BASE_URL && isApiRequest && typeof input === 'string') {
+        return nativeFetch(`${API_BASE_URL}${input}`, init);
     }
 
     return nativeFetch(input, init);
@@ -913,9 +1008,14 @@ function setAccessRole(role) {
     });
 }
 
-function setAdminAuthMode() {
-    adminLoginSection.hidden = false;
-    adminSetupSection.hidden = true;
+function setAdminAuthMode(isConfigured) {
+    if (isConfigured) {
+        adminLoginSection.hidden = false;
+        adminSetupSection.hidden = true;
+    } else {
+        adminLoginSection.hidden = true;
+        adminSetupSection.hidden = false;
+    }
     setAdminSetupMessage('');
 }
 
@@ -1137,28 +1237,54 @@ function renderSyllabus(syllabus) {
 
     setSyllabusMessage(`Showing the syllabus for ${entries.length} class${entries.length === 1 ? '' : 'es'}.`);
 
+    const canManageSyllabus = !adminDashboard.hidden;
+
     entries.forEach((entry, index) => {
         const subjects = syllabusFields.map((field) => {
-            const pdf = entry?.pdfs?.[field.key];
-            const pdfLink = pdf?.url
-                ? `<a class="syllabus-pdf-link" href="${escapeHtml(pdf.url)}" target="_blank" rel="noopener" download="${escapeHtml(pdf.original_filename || `${field.label} syllabus.pdf`)}">Open ${escapeHtml(field.label)} PDF</a>`
-                : '';
+            const chapters = Array.isArray(entry?.subjects?.[field.key]) ? entry.subjects[field.key] : [];
+            const chapterBlocks = chapters.length
+                ? chapters.map((chapter, index) => {
+                      const pdf = chapter?.pdf;
+                      const pdfLink = pdf?.url
+                          ? `<a class="syllabus-pdf-link" href="${escapeHtml(pdf.url)}" target="_blank" rel="noopener" download="${escapeHtml(pdf.original_filename || `${field.label} syllabus.pdf`)}">Open ${escapeHtml(chapter.title || field.label)} PDF</a>`
+                          : '';
+                      const deleteBtn = canManageSyllabus
+                          ? `<button type="button" class="row-action photo-delete-button" data-chapter-delete="1" data-class="${escapeHtml(entry?.class || '')}" data-subject="${escapeHtml(field.key)}" data-index="${index}">Delete chapter</button>`
+                          : '';
 
+                      return `
+                        <div class="syllabus-chapter">
+                            <strong>${escapeHtml(chapter.title || field.label)}</strong>
+                            ${pdfLink}
+                            ${deleteBtn}
+
+                        </div>
+                    `;
+                  }).join('')
+                : `<div class="syllabus-chapter"><p>Not added yet</p></div>`;
             return `
                 <div class="syllabus-subject">
                     <strong>${escapeHtml(field.label)}</strong>
-                    <p>${escapeHtml(entry?.[field.key] || 'Not added yet')}</p>
-                    ${pdfLink}
+                    ${chapterBlocks}
                 </div>
             `;
         }).join('');
-        const card = document.createElement('article');
+                 const deleteControl = canManageSyllabus
+             ? `
+                 <div class="gallery-item-actions">
+                     <button type="button" class="row-action photo-delete-button" data-syllabus-action="delete" data-syllabus-class="${escapeHtml(entry?.class || '')}">Delete syllabus</button>
+                 </div>
+             `
+             : '';
+
+const card = document.createElement('article');
         card.className = 'syllabus-item';
         card.style.setProperty('--syllabus-index', index);
         card.innerHTML = `
             <p class="eyebrow">Class</p>
             <h4>${escapeHtml(entry?.class || 'Unnamed class')}</h4>
             <div class="syllabus-subjects">${subjects}</div>
+             ${deleteControl}
         `;
         syllabusGrid.appendChild(card);
     });
@@ -1188,7 +1314,7 @@ function setSyllabusClassFilter(syllabus, preferredClass = '') {
     syllabusClassFilter.disabled = entries.length === 0;
     const selectedEntry = entries.find((entry) => {
         return syllabusClassKey(entry?.class) === syllabusClassKey(previousClass);
-    });
+    }) || (entries.length ? entries[0] : null);
     syllabusClassFilter.value = selectedEntry ? selectedEntry.class : '';
 }
 
@@ -1298,6 +1424,23 @@ async function deleteEventPhoto(photoId) {
 
     setAdminStatus(data.message || 'Event photo deleted successfully.');
     await openEventPhotoGallery({ scroll: false });
+    return data;
+}
+async function deleteSyllabus(className) {
+    const response = await fetch(`/api/admin/syllabus/${encodeURIComponent(className)}`, {
+        method: 'DELETE',
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.message || 'Unable to delete the syllabus.');
+    }
+
+    syllabusCache = Array.isArray(data.syllabus) ? data.syllabus : [];
+    setSyllabusClassFilter(syllabusCache);
+    renderSelectedSyllabus();
+    setAdminStatus(data.message || 'Syllabus deleted successfully.');
     return data;
 }
 
@@ -1417,6 +1560,9 @@ async function openAdminDashboard(options = {}) {
     resetSyllabusForm();
     closeSyllabusViewer();
     resetAdminCredentialsPanel();
+    if (toggleAdminCredentialsBtn) {
+        toggleAdminCredentialsBtn.hidden = false;
+    }
     syncAdminIdentity(username || currentAdminUsername);
 
     try {
@@ -1450,6 +1596,9 @@ function closeAdminDashboard() {
     resetSyllabusForm();
     closeSyllabusViewer();
     resetAdminCredentialsPanel();
+    if (toggleAdminCredentialsBtn) {
+        toggleAdminCredentialsBtn.hidden = true;
+    }
     syncAdminIdentity('');
 }
 
@@ -1467,11 +1616,6 @@ adminLoginForm.addEventListener('submit', async (event) => {
 
     if (!email) {
         setAdminLoginMessage('Please enter your email address.');
-        return;
-    }
-
-    if (normalizeEmail(email) !== normalizeEmail(ADMIN_EMAIL)) {
-        openStudentOnlyPanel('Student portal opened for this email.');
         return;
     }
 
@@ -1655,6 +1799,63 @@ if (photoGrid) {
             button.disabled = false;
         }
     });
+if (syllabusGrid) {
+    syllabusGrid.addEventListener('click', async (event) => {
+        const chapterBtn = event.target.closest('[data-chapter-delete]');
+        if (chapterBtn) {
+            const className = String(chapterBtn.dataset.class || '').trim();
+            const subject = String(chapterBtn.dataset.subject || '').trim();
+            const index = Number(chapterBtn.dataset.index);
+            if (!className || !subject) return;
+            const confirmed = window.confirm('Delete this chapter?');
+            if (!confirmed) return;
+            chapterBtn.disabled = true;
+            try {
+                const response = await fetch('/api/admin/syllabus/chapter', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ class: className, subject, index }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Unable to delete chapter.');
+                syllabusCache = Array.isArray(data.syllabus) ? data.syllabus : syllabusCache;
+                setSyllabusClassFilter(syllabusCache, className);
+                renderSelectedSyllabus();
+                setAdminStatus(data.message || 'Chapter deleted successfully.');
+            } catch (error) {
+                console.error('Delete chapter error:', error);
+                setAdminStatus(error.message || 'Could not delete the chapter right now.');
+            } finally {
+                chapterBtn.disabled = false;
+            }
+            return;
+        }
+
+        const button = event.target.closest('[data-syllabus-action="delete"]');
+        if (!button) return;
+
+        const className = String(button.dataset.syllabusClass || '').trim();
+        if (!className) {
+            return;
+        }
+
+        const confirmed = window.confirm(`Delete syllabus for class ${className}?`);
+        if (!confirmed) {
+            return;
+        }
+
+        button.disabled = true;
+
+        try {
+            await deleteSyllabus(className);
+        } catch (error) {
+            console.error('Delete syllabus error:', error);
+            setAdminStatus(error.message || 'Could not delete the syllabus right now.');
+        } finally {
+            button.disabled = false;
+        }
+    });
+}
 }
 
 studentLookupForm.addEventListener('submit', async (event) => {
@@ -1704,6 +1905,10 @@ studentForm.addEventListener('submit', async (event) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(payload),
+
+
+
+
         });
 
         const data = await response.json();
@@ -1751,31 +1956,93 @@ if (syllabusButtons.length && syllabusViewer && syllabusGrid && syllabusCount &&
 
 if (syllabusClassFilter) {
     syllabusClassFilter.addEventListener('change', renderSelectedSyllabus);
+    syllabusClassFilter.addEventListener('input', renderSelectedSyllabus);
+    syllabusClassFilter.onchange = renderSelectedSyllabus;
 }
 
 if (toggleSyllabusFormBtn && syllabusForm) {
     toggleSyllabusFormBtn.addEventListener('click', toggleSyllabusForm);
 }
+const syllabusSubjectLabels = [
+    { key: 'maths', label: 'Maths' },
+    { key: 'science', label: 'Science' },
+    { key: 'english', label: 'English' },
+    { key: 'kannada', label: 'Kannada' },
+    { key: 'social_science', label: 'Social Science' },
+    { key: 'hindi', label: 'Hindi' },
+];
+
+function addChapterRow(subjectKey, container, chapter) {
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'chapter-row';
+    row.innerHTML = `
+        <input type="text" class="chapter-title" placeholder="Chapter title" value="${escapeHtml(chapter?.title || '')}" style="width: 100%;">
+        <input type="file" class="chapter-pdf" accept="application/pdf">
+    `;
+    container.appendChild(row);
+}
+
+function buildSyllabusSubjectEditors() {
+    if (!syllabusSubjects) return;
+    syllabusSubjects.innerHTML = '';
+    syllabusSubjectLabels.forEach(({ key, label }) => {
+        const block = document.createElement('div');
+        block.className = 'subject-block';
+        block.dataset.subject = key;
+        block.innerHTML = `
+            <h4>${escapeHtml(label)}</h4>
+            <div class="chapters"></div>
+        `;
+        const chaptersContainer = block.querySelector('.chapters');
+        addChapterRow(key, chaptersContainer, null);
+        syllabusSubjects.appendChild(block);
+    });
+}
+
+if (syllabusSubjects) {
+    buildSyllabusSubjectEditors();
+}
+
+function resetSyllabusEditors() {
+    if (!syllabusSubjects) return;
+    const blocks = syllabusSubjects.querySelectorAll('.subject-block');
+    blocks.forEach((block) => {
+        const key = block.dataset.subject;
+        const chaptersContainer = block.querySelector('.chapters');
+        if (chaptersContainer) {
+            chaptersContainer.innerHTML = '';
+            addChapterRow(key, chaptersContainer, null);
+        }
+    });
+}
+
+const originalResetSyllabusForm = resetSyllabusForm;
+resetSyllabusForm = function () {
+    originalResetSyllabusForm();
+    resetSyllabusEditors();
+};
 
 if (syllabusForm && syllabusClass && syllabusFormMessage) {
     syllabusForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        const payload = {
-            class: syllabusClass.value.trim(),
-        };
-        syllabusFields.forEach((field) => {
-            payload[field.key] = field.input.value.trim();
-        });
-
-        if (!payload.class) {
+        const className = syllabusClass.value.trim();
+        if (!className) {
             setSyllabusFormMessage('Please enter the class before saving.');
             return;
         }
 
-        const hasSubjectContent = syllabusFields.some((field) => {
-            return payload[field.key] || field.pdfInput?.files?.length;
-        });
+        const subjectBlocks = Array.from(syllabusSubjects.querySelectorAll('.subject-block'));
+        let hasSubjectContent = false;
+        for (const block of subjectBlocks) {
+            const rows = block.querySelectorAll('.chapter-row');
+            for (const row of rows) {
+                const title = row.querySelector('.chapter-title')?.value?.trim() || '';
+                const file = row.querySelector('.chapter-pdf')?.files?.[0];
+                if (title || file) { hasSubjectContent = true; }
+            }
+        }
         if (!hasSubjectContent) {
             setSyllabusFormMessage('Add at least one subject syllabus or PDF attachment before saving.');
             return;
@@ -1784,21 +2051,27 @@ if (syllabusForm && syllabusClass && syllabusFormMessage) {
         setSyllabusFormMessage('Saving syllabus...');
 
         const formData = new FormData();
-        formData.append('class', payload.class);
-        for (const field of syllabusFields) {
-            formData.append(field.key, payload[field.key]);
+        formData.append('class', className);
 
-            const attachment = field.pdfInput?.files?.[0];
-            if (!attachment) {
-                continue;
+        for (const block of subjectBlocks) {
+            const subjectKey = block.dataset.subject;
+            const rows = block.querySelectorAll('.chapter-row');
+            let index = 0;
+            for (const row of rows) {
+                const title = row.querySelector('.chapter-title')?.value?.trim() || '';
+                const file = row.querySelector('.chapter-pdf')?.files?.[0];
+                if (!title && !file) { continue; }
+                formData.append(`${subjectKey}_chapter_${index}_title`, title);
+                formData.append(`${subjectKey}_chapter_${index}_content`, '');
+                if (file) {
+                    if (!isPdfAttachment(file)) {
+                        setSyllabusFormMessage(`The ${subjectKey.replace('_', ' ')} attachment must be a PDF file.`);
+                        return;
+                    }
+                    formData.append(`${subjectKey}_chapter_${index}_pdf`, file);
+                }
+                index += 1;
             }
-
-            if (!isPdfAttachment(attachment)) {
-                setSyllabusFormMessage(`The ${field.label} attachment must be a PDF file.`);
-                return;
-            }
-
-            formData.append(`${field.key}_pdf`, attachment);
         }
 
         try {
@@ -1822,7 +2095,7 @@ if (syllabusForm && syllabusClass && syllabusFormMessage) {
 
             if (syllabusViewer && !syllabusViewer.hidden) {
                 syllabusCache = Array.isArray(data.syllabus) ? data.syllabus : [];
-                setSyllabusClassFilter(syllabusCache, data.entry?.class || payload.class);
+                setSyllabusClassFilter(syllabusCache, data.entry?.class || className);
                 renderSelectedSyllabus();
             }
         } catch (error) {

@@ -1,6 +1,16 @@
 [build]
   publish = "."
 
+# For cross-device persistence, deploy the Flask backend (app.py) to a persistent
+# host (Render, Railway, PythonAnywhere, etc.) and uncomment the redirect below,
+# replacing BACKEND_URL with that host. This makes every /api/* call hit the
+# shared backend instead of the static bundle.
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://BACKEND_URL/api/:splat"
+#   status = 200
+#   force = true
+
 [[redirects]]
   from = "/*"
   to = "/static/template/index.html"

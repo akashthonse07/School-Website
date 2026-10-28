@@ -67,6 +67,7 @@
                     <div class="button-row">
                         <button type="submit" class="primary-button">View result</button>
                         <button type="button" class="ghost-button" id="studentViewEventPhotosBtn" data-view-event-photos aria-expanded="false" aria-controls="eventPhotoGallery">View photos</button>
+                        <button type="button" class="ghost-button" data-view-syllabus aria-expanded="false" aria-controls="syllabusViewer">View syllabus</button>
                     </div>
                 </form>
                 <p id="lookupMessage" class="form-note" aria-live="polite"></p>
@@ -241,6 +242,32 @@
                 <p id="eventPhotoMessage" class="form-note" aria-live="polite"></p>
             </article>
 
+            <article class="table-card">
+                <div class="table-head">
+                    <div>
+                        <p class="eyebrow">Syllabus</p>
+                        <h2>Manage class syllabus</h2>
+                    </div>
+                    <div class="button-row">
+                        <button type="button" class="ghost-button" id="toggleSyllabusFormBtn" aria-expanded="false" aria-controls="syllabusForm">Add syllabus</button>
+                        <button type="button" class="ghost-button" data-view-syllabus aria-expanded="false" aria-controls="syllabusViewer">View syllabus</button>
+                    </div>
+                </div>
+
+                <form id="syllabusForm" class="student-form" hidden enctype="multipart/form-data">
+                    <label class="field">
+                        <span>Class</span>
+                        <input id="syllabusClass" name="class" type="text" placeholder="7" required>
+                    </label>
+
+                    <div id="syllabusSubjects" class="syllabus-subjects-editor"></div>
+
+                    <button type="submit" class="primary-button">Save syllabus</button>
+                </form>
+
+                <p id="syllabusFormMessage" class="form-note" aria-live="polite"></p>
+            </article>
+
             <article id="adminCredentialsPanel" class="table-card credential-card" hidden>
                 <div class="table-head">
                     <div>
@@ -380,6 +407,21 @@
         </div>
         <p id="photoMessage" class="form-note" aria-live="polite"></p>
         <div id="photoGrid" class="gallery-grid"></div>
+    </section>
+
+    <section id="syllabusViewer" class="table-card gallery-card shared-gallery" hidden>
+        <div class="gallery-head">
+            <div>
+                <p class="eyebrow">Syllabus</p>
+                <h3>Class syllabus</h3>
+            </div>
+            <span class="result-chip" id="syllabusCount">0 classes</span>
+        </div>
+        <div class="button-row">
+            <select id="syllabusClassFilter" disabled></select>
+        </div>
+        <p id="syllabusMessage" class="form-note" aria-live="polite"></p>
+        <div id="syllabusGrid" class="gallery-grid"></div>
     </section>
 
     <script src="/static/script.js"></script>
