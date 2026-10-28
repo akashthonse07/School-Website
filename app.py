@@ -125,29 +125,37 @@ def load_students():
 
 
 def save_students(students):
-    conn = db.get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM students")
-    normalized_students = []
-    for student in students:
-        normalized = normalize_student(student)
-        normalized_students.append(normalized)
-        cur.execute(
-            "INSERT INTO students (roll_no,name,class,maths,science,english,kannada,social_science,hindi) VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                int(normalized["roll_no"]), normalized["name"], normalized["class"],
-                int(normalized["maths"]), int(normalized["science"]), int(normalized["english"]),
-                int(normalized["kannada"]), int(normalized["social_science"]), int(normalized["hindi"]),
-            ),
-        )
-    conn.commit()
-    conn.close()
+    try:
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM students")
+        normalized_students = []
+        for student in students:
+            normalized = normalize_student(student)
+            normalized_students.append(normalized)
+            cur.execute(
+                "INSERT INTO students (roll_no,name,class,maths,science,english,kannada,social_science,hindi) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    int(normalized["roll_no"]), normalized["name"], normalized["class"],
+                    int(normalized["maths"]), int(normalized["science"]), int(normalized["english"]),
+                    int(normalized["kannada"]), int(normalized["social_science"]), int(normalized["hindi"]),
+                ),
+            )
+        conn.commit()
+        conn.close()
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        normalized_students = [normalize_student(student) for student in students]
 
     # keep legacy JSON in sync so deleted records never reappear on migration
     try:
         DATA_FILE.write_text(json.dumps(normalized_students, indent=2), encoding="utf-8")
     except OSError:
         pass
+    return normalized_students
 
 
 def build_event_photo_url(stored_filename):
@@ -345,18 +353,27 @@ def load_syllabus():
             normalized_syllabus.append(normalized_entry)
     normalized_syllabus.sort(key=lambda item: syllabus_class_key(item.get("class")))
     if normalized_syllabus != syllabus:
-        save_syllabus(normalized_syllabus)
+        try:
+            save_syllabus(normalized_syllabus)
+        except Exception:
+            pass
     return normalized_syllabus
 
 
 def save_syllabus(syllabus):
-    conn = db.get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM syllabus")
-    for entry in syllabus:
-        cur.execute("INSERT INTO syllabus (class,data) VALUES (?,?)", (clean_text(entry.get("class")), json.dumps(entry)))
-    conn.commit()
-    conn.close()
+    try:
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM syllabus")
+        for entry in syllabus:
+            cur.execute("INSERT INTO syllabus (class,data) VALUES (?,?)", (clean_text(entry.get("class")), json.dumps(entry)))
+        conn.commit()
+        conn.close()
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     try:
         SYLLABUS_FILE.write_text(json.dumps(syllabus, indent=2), encoding="utf-8")
@@ -539,14 +556,20 @@ def normalize_email(value):
 
 
 def set_meta_value(key, value):
-    conn = db.get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (key, str(value)),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
     return str(value or "").strip().lower()
 
 

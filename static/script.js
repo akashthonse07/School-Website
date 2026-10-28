@@ -169,8 +169,29 @@ const LOCAL_SEED_EVENT_PHOTOS = [
         uploaded_by: 'Akash',
     },
 ];
+const LOCAL_SEED_SYLLABUS = [
+    {
+        class: '7',
+        subjects: {
+            maths: [
+                { title: 'ch1', content: '', pdf: { original_filename: 'Book1.pdf', url: '/static/uploads/syllabus-pdfs/d0c22b791acb4749bf425668c6a1e52a.pdf' } },
+                { title: 'ch2', content: '', pdf: { original_filename: 'Garodi_Reciept.pdf', url: '/static/uploads/syllabus-pdfs/9205ed3756924b6c97f177c94f00c47b.pdf' } },
+            ],
+            science: [
+                { title: 'ch1', content: '', pdf: { original_filename: 'Pending_List.pdf', url: '/static/uploads/syllabus-pdfs/c8c3b6fa642647419b2b93a8f95175f4.pdf' } },
+                { title: 'ch2', content: '', pdf: { original_filename: 'Pending_List.pdf', url: '/static/uploads/syllabus-pdfs/98821e3782994ee3a01924e22d6fd14e.pdf' } },
+            ],
+        },
+    },
+    {
+        class: '8',
+        subjects: {},
+    },
+];
+
+
 let backendMode = SERVER_MODE;
-const memoryStorage = new Map();
+const nativeFetch = window.fetch.bind(window);
 
 function cloneData(value) {
     return JSON.parse(JSON.stringify(value));
@@ -333,8 +354,9 @@ function getLocalSyllabus() {
         return sortLocalSyllabus(stored.map(normalizeLocalSyllabusEntry).filter(Boolean));
     }
 
-    writeLocalJson(LOCAL_STORAGE_KEYS.syllabus, []);
-    return [];
+    const seed = sortLocalSyllabus(cloneData(LOCAL_SEED_SYLLABUS).map(normalizeLocalSyllabusEntry).filter(Boolean));
+    writeLocalJson(LOCAL_STORAGE_KEYS.syllabus, seed);
+    return seed;
 }
 
 function saveLocalSyllabus(syllabus) {
