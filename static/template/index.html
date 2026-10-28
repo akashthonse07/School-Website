@@ -418,12 +418,12 @@
             <span class="result-chip" id="syllabusCount">0 classes</span>
         </div>
         <div class="button-row">
-            <select id="syllabusClassFilter" disabled></select>
+            <select id="syllabusClassFilter" disabled onchange="renderSelectedSyllabus()" onclick="renderSelectedSyllabus()"></select>
         </div>
         <p id="syllabusMessage" class="form-note" aria-live="polite"></p>
         <div id="syllabusGrid" class="gallery-grid"></div>
     </section>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=3"></script>
 </body>
 </html>
